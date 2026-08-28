@@ -10,7 +10,7 @@
 Manus/
 ├── AI 활용 학습 A1-1/    # 프롬프트 매니저 및 테스트 과제
 ├── AI 활용 학습 A1-2/    # 여행 플래너 API 및 카카오 연동
-├── AI 활용 학습 A1-3/    # 온기록(Ongirok) 서비스 및 Vercel 배포 프로젝트
+├── AI 활용 학습 A1-3_임시/    # 온기록(Ongirok) 서비스 및 Vercel 배포 프로젝트
 ├── ESL_Project/          # ESL 프로젝트
 ├── backups/              # Manus 공식 암호화 백업 파일 보관 폴더
 │   ├── account-data-나-08-21_10-29-54.manusaccount

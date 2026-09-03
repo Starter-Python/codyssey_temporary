@@ -1,9 +1,22 @@
 """travel_planner.py의 외부 API 호출 없이 검증 가능한 핵심 동작 테스트."""
 
+from __future__ import annotations
+
+import json
 import os
 import sys
+import tempfile
 import unittest
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+# requests 또는 dotenv가 설치되지 않은 환경에서도 단위 테스트가 독립적으로 실행될 수 있도록 모의 객체 주입
+for mod_name in ("requests", "dotenv"):
+    if mod_name not in sys.modules:
+        try:
+            __import__(mod_name)
+        except ImportError:
+            sys.modules[mod_name] = MagicMock()
 
 import travel_planner as planner
 
@@ -38,6 +51,18 @@ class TravelPlannerTest(unittest.TestCase):
         self.assertIsInstance(result["x"], float)
         self.assertIsInstance(result["y"], float)
 
+    def test_normalize_city_name(self):
+        # 광역 지자체 및 특별자치도 보정 검증
+        self.assertEqual(planner.normalize_city_name("강원도"), "강릉")
+        self.assertEqual(planner.normalize_city_name("제주특별자치도"), "제주")
+        self.assertEqual(planner.normalize_city_name("경주"), "경주")
+
+    def test_extract_json_object_with_markdown_fence(self):
+        # 마크다운 코드블록 및 앞뒤 문구가 붙어도 JSON 추출
+        raw = "여기 추천 결과입니다:\n```json\n{\"recommended_city\": \"여수\"}\n```\n좋은 여행 되세요!"
+        extracted = planner.extract_json_object(raw)
+        self.assertEqual(extracted, '{"recommended_city": "여수"}')
+
     def test_missing_kakao_key_keeps_pipeline_alive(self):
         errors = []
         with patch.dict(os.environ, {"KAKAO_REST_API_KEY": ""}, clear=False):
@@ -62,6 +87,22 @@ class TravelPlannerTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as context:
                 planner.parse_args()
         self.assertNotEqual(context.exception.code, 0)
+
+    def test_load_cached_data_success(self):
+        # 임시 디렉토리에 캐시 파일 생성 후 정상 로드 검증
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            sample = {
+                "travel_date": "2026-10-03",
+                "recommendation": {"recommended_city": "경주"},
+                "restaurants": [{"name": "황남빵"}],
+            }
+            cache_file = tmppath / "2026-10-03_travel_data.json"
+            cache_file.write_text(json.dumps(sample), encoding="utf-8")
+            with patch.object(planner, "RESULTS_DIR", tmppath):
+                loaded = planner.load_cached_data("2026-10-03")
+                self.assertIsNotNone(loaded)
+                self.assertEqual(loaded["recommendation"]["recommended_city"], "경주")
 
 
 if __name__ == "__main__":

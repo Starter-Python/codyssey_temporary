@@ -34,6 +34,12 @@ GEMINI_MODEL=gemini-2.5-flash
 python travel_planner.py -date "2026-10-03"
 # 또는
 python travel_planner.py --date "2026-10-03"
+
+# [보너스 과제] 기존 저장된 원본 데이터가 있다면 외부 API 호출 없이 캐시 재사용
+python travel_planner.py -date "2026-10-03" --cached
+
+# 기존 캐시를 무시하고 API를 새로 강제 호출
+python travel_planner.py -date "2026-10-03" --refresh
 ```
 
 ```text
@@ -46,7 +52,7 @@ python travel_planner.py --date "2026-10-03"
 완료! results/2026-10-03_travel_plan.md 및 results/2026-10-03_travel_data.json를 확인하세요.
 ```
 
-`-date`는 필수이며, 실제 달력에 존재하지 않거나 `YYYY-MM-DD` 형식이 아니면 사용법과 오류를 출력하고 종료합니다.
+`-date`는 필수이며, 실제 달력에 존재하지 않거나 `YYYY-MM-DD` 형식이 아니면 사용법과 오류를 출력하고 종료합니다. 동일한 날짜로 재실행 시 기존에 저장된 `results/{date}_travel_data.json`이 감지되면 자동으로 캐시를 활용하여 API 호출 비용을 절감합니다(`--refresh`로 새로고침 가능).
 
 ## API 키 발급과 결과 확인
 

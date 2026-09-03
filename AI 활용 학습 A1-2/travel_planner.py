@@ -11,8 +11,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import requests
-from dotenv import load_dotenv
+try:
+    import requests
+except ImportError:
+    requests = None  # type: ignore[assignment]
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args: Any, **kwargs: Any) -> bool:  # type: ignore[misc]
+        return False
 
 BASE_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = BASE_DIR / "results"
@@ -50,12 +58,53 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-date", "--date", dest="travel_date", required=True, metavar="YYYY-MM-DD", help="여행 날짜")
+    parser.add_argument("--cached", action="store_true", help="저장된 원본 데이터(JSON)가 있으면 API 재호출 없이 캐시를 재사용합니다 (보너스 과제).")
+    parser.add_argument("--refresh", action="store_true", help="기존 캐시를 무시하고 API를 새로 호출합니다.")
     args = parser.parse_args()
     try:
         datetime.strptime(args.travel_date, "%Y-%m-%d")
     except ValueError:
         parser.error("-date/--date는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.")
     return args
+
+
+def normalize_city_name(city: str) -> str:
+    """광역시/도 등 광역 지자체 명칭이나 수식어를 지도 검색에 적합한 대표 도시/지역명으로 정규화."""
+    cleaned = city.strip()
+    replacements = {
+        "제주특별자치도": "제주",
+        "강원특별자치도": "강원",
+        "전북특별자치도": "전북",
+        "강원도": "강릉",  # 광역 도 단위일 경우 관광 중심 도시로 보정
+        "경기도": "가평",
+        "충청북도": "단양",
+        "충청남도": "태안",
+        "전라북도": "전주",
+        "전라남도": "여수",
+        "경상북도": "경주",
+        "경상남도": "통영",
+        "서울특별시": "서울",
+        "부산광역시": "부산",
+        "대구광역시": "대구",
+        "인천광역시": "인천",
+        "광주광역시": "광주",
+        "대전광역시": "대전",
+        "울산광역시": "울산",
+        "세종특별자치시": "세종",
+    }
+    return replacements.get(cleaned, cleaned)
+
+
+def extract_json_object(raw_text: str) -> str:
+    """마크다운 코드블록이나 불필요한 앞뒤 텍스트가 섞여 있어도 유효한 JSON 객체 블록만 추출."""
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    match = re.search(r"(\{.*\})", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text
 
 
 def redact_secrets(message: str) -> str:
@@ -109,6 +158,8 @@ def extract_gemini_text(payload: dict[str, Any]) -> str:
 def request_gemini(
     api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None
 ) -> str:
+    if requests is None:
+        raise PlannerError("외부 API 호출을 위해 requests 패키지가 필요합니다. pip install -r requirements.txt를 실행하세요.")
     generation: dict[str, Any] = {"temperature": 0.5, "maxOutputTokens": max_output_tokens}
     if response_schema:
         generation.update({"responseMimeType": "application/json", "responseJsonSchema": response_schema})
@@ -139,14 +190,17 @@ def request_gemini(
 
 def create_recommendation(api_key: str, model: str, travel_date: str, errors: list[dict[str, str]]) -> dict[str, Any]:
     initial = f"""여행 날짜는 {travel_date}입니다. 국내 여행지 한 곳을 추천하세요.
+도/광역 단위(예: 강원도, 경기도)가 아닌 시/군/구 단위의 구체적인 도시명(예: 제주, 강릉, 경주, 여수)을 추천하세요.
 실시간 예보·확정 행사가 아닌 일반적 계절 경향과 행사 후보를 제시하세요.
 JSON 객체만 반환하세요: recommended_city(문자열), weather(문자열), events(문자열 배열 1~3개), reason(2~4문장 문자열)."""
-    repair = "설명이나 코드블록 없이 recommended_city, weather, events, reason 네 키만 가진 유효한 JSON 객체를 반환하세요."
+    repair = "설명이나 마크다운 코드블록 없이 recommended_city, weather, events, reason 네 키만 가진 유효한 JSON 객체만 반환하세요."
     for attempt in range(2):
         try:
-            return validate_recommendation(json.loads(request_gemini(
+            raw_text = request_gemini(
                 api_key, model, initial if attempt == 0 else repair, max_output_tokens=700, response_schema=RECOMMENDATION_SCHEMA
-            )))
+            )
+            json_text = extract_json_object(raw_text)
+            return validate_recommendation(json.loads(json_text))
         except (json.JSONDecodeError, ValueError) as exc:
             if attempt == 0:
                 print("  - Gemini JSON 검증 실패: 형식을 보정하여 1회 재시도합니다.")
@@ -182,12 +236,18 @@ def normalize_place(place: dict[str, Any]) -> dict[str, Any]:
 
 def search_restaurants(city: str, errors: list[dict[str, str]]) -> list[dict[str, Any]]:
     kakao_key = os.getenv("KAKAO_REST_API_KEY")
+    search_city = normalize_city_name(city)
     if not kakao_key:
         add_error(errors, "place_search", "MISSING_API_KEY", "KAKAO_REST_API_KEY가 없어 장소 검색을 건너뛰었습니다.")
         print("  - KAKAO_REST_API_KEY 미설정: 맛집을 '데이터 없음'으로 처리하고 계속합니다.")
         return []
     try:
-        response = requests.get(KAKAO_KEYWORD_URL, headers={"Authorization": f"KakaoAK {kakao_key}"}, params={"query": f"{city} 맛집", "size": 5}, timeout=TIMEOUT_SECONDS)
+        response = requests.get(
+            KAKAO_KEYWORD_URL,
+            headers={"Authorization": f"KakaoAK {kakao_key}"},
+            params={"query": f"{search_city} 맛집", "size": 5},
+            timeout=TIMEOUT_SECONDS,
+        )
         if response.status_code in (401, 403):
             add_error(errors, "place_search", "AUTH_ERROR", f"HTTP {response.status_code}")
             print(f"  - 장소 검색 인증 실패(HTTP {response.status_code}): 데이터 없음으로 계속합니다.")
@@ -269,6 +329,20 @@ def create_report(api_key: str, model: str, date: str, recommendation: dict[str,
         return fallback_report(date, recommendation, places, errors)
 
 
+def load_cached_data(date: str) -> dict[str, Any] | None:
+    """기존 저장된 원본 데이터(JSON)가 있으면 읽어와 반환 (보너스 과제: 결과 캐싱)."""
+    data_path = RESULTS_DIR / f"{date}_travel_data.json"
+    if not data_path.exists():
+        return None
+    try:
+        content = json.loads(data_path.read_text(encoding="utf-8"))
+        if isinstance(content, dict) and "recommendation" in content and "restaurants" in content:
+            return content
+    except Exception:
+        return None
+    return None
+
+
 def write_results(date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]], report: str) -> tuple[Path, Path]:
     RESULTS_DIR.mkdir(exist_ok=True)
     data_path, report_path = RESULTS_DIR / f"{date}_travel_data.json", RESULTS_DIR / f"{date}_travel_plan.md"
@@ -281,6 +355,29 @@ def main() -> int:
     args = parse_args()
     load_dotenv(BASE_DIR / ".env")
     errors: list[dict[str, str]] = []
+
+    # 보너스 과제: 결과 캐싱 검사
+    cached_data = None
+    if args.cached or (not args.refresh and (RESULTS_DIR / f"{args.travel_date}_travel_data.json").exists()):
+        cached_data = load_cached_data(args.travel_date)
+
+    if cached_data:
+        print(f"[보너스 과제: 캐시 재사용] {args.travel_date} 저장된 원본 JSON을 활용하여 외부 API 호출을 생략합니다.")
+        print("  - (새로고침을 원할 경우 --refresh 옵션을 사용하세요)")
+        recommendation = cached_data["recommendation"]
+        places = cached_data["restaurants"]
+        errors = cached_data.get("errors", [])
+        report_path = RESULTS_DIR / f"{args.travel_date}_travel_plan.md"
+        data_path = RESULTS_DIR / f"{args.travel_date}_travel_data.json"
+
+        if not report_path.exists():
+            report = fallback_report(args.travel_date, recommendation, places, errors)
+            report_path.write_text(report, encoding="utf-8")
+
+        print("  - 캐시 기반 리포트 로드 완료")
+        print(f"완료! {report_path.relative_to(BASE_DIR)} 및 {data_path.relative_to(BASE_DIR)}를 확인하세요.")
+        return 0
+
     try:
         api_key, model = build_gemini_settings()
         print("[1/3] 1차 추천 생성 중(Gemini)...")

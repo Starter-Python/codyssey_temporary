@@ -6,62 +6,57 @@
 
 | 항목 | 내용 |
 |---|---|
-| **서비스명** | **ENTHES (Enjoy The Squash) — ESL 리그 & AI 코치** |
-| **서비스 정의** | 동아리 스쿼시 정규 리그(ESL) 운영 자동화 및 Google Gemini 기반 실시간 경기 분석·피드백 AI 웹 애플리케이션 |
-| **타겟 사용자** | 1) 스쿼시 동아리 회원(선수 42명): 본인 경기 일정 확인, 출석 체크, 6축 스탯 조회, AI 코칭 리포트 열람<br />2) 동아리 운영진(임원진): 리그 규정 준수 자동 대진 생성, 결과 확정, 긴급 롤백, 단톡방 공지 생성 |
-| **핵심 목적** | 1) 수작업 대진 편성 오류 및 핸디캡 계산 착오 원천 차단<br />2) 취미 동호인들에게 객관적인 6축 실력 지표(스탯) 및 전문 코치급 AI 맞춤형 훈련 드릴 제공 |
+| **서비스명** | **ENTHES (Enjoy The Squash) — ESL 정규 리그 & AI 코치** |
+| **서비스 정의** | 2026 하반기 스쿼시 정규 리그(ESL 33인 체제) 운영 및 Google Gemini 기반 실시간 경기 분석·스탯 변환 AI 웹 플랫폼 |
+| **타겟 사용자** | 1) 스쿼시 동아리 회원(33명 공식 선수단): 본인 대진 확인, 경기 결과 & 메모 등록, 6축 스탯 및 AI 진단 열람<br />2) 동아리 운영진: 공정 대진 자동 편성, 결과 확정/수정, 1초 롤백 복구, 단톡방 카톡 공지 생성 |
+| **핵심 가치** | 1) 복잡한 3개 리그(E1, E2, E3) 출전수 및 티어 핸디캡 자동 계산<br />2) 경기 메모 한 줄로 승자/패자 플레이를 동시 식별하여 개별 6축 스탯 및 실천 드릴을 산출하는 스마트 AI 코칭 |
 
 ---
 
-## 2. 타겟 사용자 페르소나 및 문제 정의 (Pain Points & Solutions)
+## 2. 타겟 사용자 및 해결 과제 (Problem & Solution)
 
-### 페르소나 1: 동아리 2부 리그 회원 (민지, 23세)
-- **Pain Point**:
-  - "내가 스쿼시를 치면서 포핸드는 괜찮은 것 같은데 왜 자꾸 지는지, 어떤 연습을 더 해야 실력이 느는지 객관적인 피드백을 받기 어려워요."
-  - "정기 모임 날 내가 몇 시에 누구랑 치는지, 핸디캡이 몇 점인지 일일이 물어보기 번거로워요."
+### 1) 동아리 회원 (Player)
+- **Problem**: "경기가 끝나도 내 플레이의 구체적인 강점이나 보완점을 알기 어렵고, 스쿼시 역량을 객관적으로 파악할 지표가 부족함."
 - **Solution**:
-  - 경기 후 경기 메모 한 줄만 남기면, **구글 Gemini AI가 내 플레이의 장점과 보완점을 분석하고 맞춤 훈련 드릴**을 제안합니다.
-  - 모바일 웹에서 내 이름만 선택하면 배정된 코트, 상대, 핸디캡(+2점), 서브권을 즉시 확인할 수 있습니다.
+  - 경기 종료 후 대진 카드에서 **[결과 입력 & AI 분석]** 버튼을 터치하여 스코어와 1~2줄 메모만 입력하면, AI가 승리 요인과 패배 원인을 분석하고 맞춤 드릴을 제시합니다.
+  - `포핸드`, `백핸드`, `공격옵션`, `스피드`, `체력`, `침착성` 6대 역량 레이더 차트와 OVR 성장 궤적을 통해 본인의 성장을 시각적으로 확인합니다.
 
-### 페르소나 2: 동아리 총무/운영진 (준호, 25세)
-- **Pain Point**:
-  - "매주 참석자 20~30명을 모아놓고 1·2·3부 리그가 섞이지 않게, 같은 사람끼리 또 붙지 않게 엑셀로 대진을 짜느라 30분 넘게 걸려요."
-  - "경기 결과를 잘못 기입하거나 실수로 삭제했을 때 복구하기가 너무 무섭습니다."
+### 2) 동아리 운영진 (Administrator)
+- **Problem**: "33명의 선수가 속한 E1(10명), E2(15명), E3(8명) 리그에서 최소 7경기 출전 규정, 티어 핸디캡(+2점), 하위 티어 우선 서브권을 수작업으로 관리하기 어려움."
 - **Solution**:
-  - 버튼 하나로 **리그 격리 & 핸디캡 & 자율 심판까지 고려된 완전 자동 대진**을 생성합니다.
-  - 실수로 데이터를 날려도 **1초 Undo 롤백** 버튼으로 직전 상태를 완벽하게 되살립니다.
+  - 리그 규정이 내장된 스마트 스케줄러로 자동 대진 및 핸디캡을 1초 만에 산출합니다.
+  - 실수로 점수를 잘못 기입하거나 삭제하더라도 **1초 Undo 롤백** 버튼으로 직전 상태를 완벽 복원합니다.
 
 ---
 
 ## 3. 페이지 및 섹션 구성 (Information Architecture)
 
-본 서비스는 사용자가 어떤 기기(모바일/태블릿/데스크톱)에서도 직관적으로 탐색할 수 있도록 **6대 핵심 섹션**으로 설계되었습니다:
-
 ```
 ENTHES ESL WebApp
 ├── 🏠 1. 홈 대시보드 (Dashboard)
-│   ├── 시즌 현황 카운터 (선수수, 경기수, 오늘 출석, AI 리포트 건수)
-│   ├── 오늘의 주요 대진 요약 카드
-│   └── 최근 확정 경기 결과 요약
-├── 📅 2. 대진 일정 (Schedule)
-│   ├── 리그별 필터링 (전체, 1부, 2부, 3부)
-│   ├── 날짜별 대진 카드 (선수, 세트 스코어, 코트, 시간)
-│   └── 핸디캡(+2점 등) 및 배정 심판 2인 표시
+│   ├── 시즌 현황 카운터 (33명 선수단, 확정 경기, 참석 현황, AI 리포트 건수)
+│   ├── 진행 예정 주요 대진 카드 (결과 입력 원클릭 이동)
+│   └── 최근 확정 결과 요약
+├── 📅 2. 대진표 (Schedule)
+│   ├── 리그별 필터링 (전체, E1 1부, E2 2부, E3 3부)
+│   ├── 날짜별 대진 카드 (코트, 시간, 티어별 핸디캡, 서브권, 자율 심판)
+│   ├── 팝업 모달: [결과 입력 & AI 분석] (세트 점수 + 관찰 메모 입력)
+│   └── 확정 경기: AI 피드백 펼쳐보기 (총평, 승자/패자 분석, 추천 드릴)
 ├── ⚡ 3. 참석 체크 (Attendance)
-│   ├── 날짜 & 선수 선택 드롭다운
-│   ├── 참석 / 불참 / 대기 원터치 상태 버튼
-│   └── 3개 리그별 실시간 출석 현황 칩(Chip) 뷰어
+│   ├── 경기 날짜 및 선수 선택
+│   ├── 참석 / 불참 / 대기 원터치 상태 등록
+│   └── E1·E2·E3 리그별 실시간 출석 현황 칩(Chip) 뷰어
 ├── 📊 4. 순위 & 6축 스탯 (Rankings & Radar)
-│   ├── 리그별 42인 순위표 (티어, OVR, 승률, 경기수)
-│   ├── 순수 SVG 6축 레이더 차트 (포핸드, 백핸드, 발리, 드라이브, 드롭, 보스트)
-│   └── 선수별 AI 성장 히스토리 요약
-├── ✨ 5. AI 코칭 스튜디오 (AI Match Coach)
-│   ├── 경기 스코어 & 관찰 메모 입력 폼 (빠른 예시 버튼 포함)
-│   ├── Gemini AI 비동기 분석 엔진 호출 (/api/coach)
-│   ├── 종합 총평, 전술 강점, 보완 조언, 추천 드릴 2~3종 카드
-│   └── 6대 스탯 변동량(+1~3점 가드레일) ➔ 선수 스탯 즉시 반영
+│   ├── E1(10명), E2(15명), E3(8명) 리그별 실시간 순위표
+│   ├── 순수 SVG 6축 레이더 차트 (포핸드, 백핸드, 공격옵션, 스피드, 체력, 침착성)
+│   ├── 수석 코치 AI 정밀 진단 (아키타입 뱃지, 강점 요인, 추천 드릴)
+│   └── OVR 성장 궤적 타임라인
+├── ✨ 5. AI 코칭 스튜디오 (AI Coach Simulator)
+│   ├── 임의의 두 선수 선택 및 스코어·메모 입력 폼
+│   ├── Gemini AI 비동기 분석 호출 (/api/coach)
+│   └── 양 선수 6대 스탯 변동량 시뮬레이션 및 프로필 반영
 └── ⚙️ 6. 운영진 데스크 (Admin Operations)
-    ├── 4자리 PIN 번호 인증 (1234, 마스터 리셋 0101)
+    ├── 운영진 4자리 PIN 인증 (1234, 마스터 리셋 0101)
     ├── 신규 경기 대진 수동 추가
     ├── 1초 Undo 롤백 복구 & 전체 데이터 JSON 백업/복원
     └── 단톡방 공지 포맷 1초 클립보드 복사
@@ -71,111 +66,108 @@ ENTHES ESL WebApp
 
 ## 4. AI 기능 상세 설계 (AI Feature Specification)
 
-### 1) 기능 정의: 스쿼시 전문 AI 경기 코칭 & 스탯 변환기
-- **목적**: 경기 스코어와 비정형 현장 메모를 구조화된 코칭 리포트 및 정량적 6축 스탯 데이터로 전환.
-- **백엔드 엔드포인트**: `POST /api/coach` (Vercel Serverless Function - Python)
-- **AI 모델**: Google Gemini (`gemini-2.5-flash` / `gemini-1.5-flash`)
+### 1) 기능 개요: 양 선수 동시 개별 코칭 및 6축 스탯 산출 엔진
+- **엔드포인트**: `POST /api/coach` (Vercel Python Serverless Function)
+- **AI 모델**: Google Gemini API (`gemini-2.5-flash`)
+- **특징**: 하나의 현장 관찰 메모를 통해 승자와 패자 각각의 강점과 약점을 식별하고, 인플레이션을 방지하는 정량적 스탯 변동량(승자 +1~2, 패자 -1~0)을 산출.
 
 ### 2) 입력 (Input) 명세
-| 필드명 | 타입 | 필수 여부 | 설명 및 유효성 검사 기준 |
+| 필드명 | 타입 | 필수 여부 | 유효성 검사 기준 |
 |---|---|:---:|---|
-| `player_a` | string | **필수** | 선수 A 이름 (최대 40자, 제어문자 정제) |
+| `player_a` | string | **필수** | 선수 A 이름 (선수 B와 중복 불가) |
 | `player_b` | string | **필수** | 선수 B 이름 (선수 A와 중복 불가) |
-| `score_a` | integer | **필수** | 선수 A 득점 (0 ~ 30 정수) |
-| `score_b` | integer | **필수** | 선수 B 득점 (0 ~ 30 정수) |
-| `memo` | string | **필수** | 현장 경기 관찰 메모 (최소 3자 ~ 최대 500자) |
+| `score_a` | integer | **필수** | 선수 A 세트 득점 (0 ~ 30 정수, 동점 불가) |
+| `score_b` | integer | **필수** | 선수 B 세트 득점 (0 ~ 30 정수, 동점 불가) |
+| `memo` | string | 선택 | 현장 경기 특이사항 메모 (최대 500자, 미입력 시 스코어 기반 분석) |
 
 ### 3) 출력 (Output) 명세
 ```json
 {
-  "summary": "[조재경 vs 문찬영] 15:12 경기 분석: 조재경 선수가 3점 차로 승리한 경기입니다. 깊은 사이드월 렝스 드라이브로 랠리 주도권을 확보했습니다.",
-  "strengths": "사이드월을 타고 흐르는 깊은 렝스 드라이브로 상대 리턴을 압박하며 T-존 선제 발리로 공격 주도권을 장악했습니다.",
-  "improvements": "세트 중반 무리한 전위 드롭 시도로 틴(Tin) 범실이 발생했으므로 확실한 오픈 찬스에서만 결정을 지으세요.",
-  "drills": [
-    "단독 사이드월 밀착 솔로 드라이브 50회 연습 (벽과 라켓 1그립 유지)",
-    "파트너와 2인 T-존 연속 발리 랠리 30회 유지 훈련"
-  ],
-  "stat_adjustments": {
-    "forehand": 1,
-    "backhand": 0,
-    "volley": 1,
-    "drive": 1,
-    "drop": -1,
-    "boast": 0
+  "matchSummary": "임영현 선수가 김형석 선수를 상대로 15:10 (5점 차) 접전 끝에 승리했습니다.",
+  "winnerAnalysis": "임영현 선수가 T존을 선점하고 정교한 드롭샷과 강력한 킬샷으로 많은 득점에 성공했습니다.",
+  "loserAnalysis": "김형석 선수는 끈질긴 체력으로 코트를 커버했으나, 백코너 수비에서 실수가 잦았습니다.",
+  "practiceTip": "솔로 레일 드릴: 벽과 1미터 거리를 유지하며 드라이브를 연속 15회 벽에 밀착시키는 연습을 권장합니다.",
+  "statAdjustments": {
+    "임영현": { "forehand": 1, "backhand": 0, "attackOption": 2, "speed": 1, "stamina": 1, "composure": 1 },
+    "김형석": { "forehand": 0, "backhand": -1, "attackOption": 0, "speed": 0, "stamina": -1, "composure": 0 }
   },
+  "provider": "gemini",
   "model_used": "Google Gemini (gemini-2.5-flash)"
 }
 ```
 
-### 4) 3단계 실패 처리 기준 (Failure Handling & UX Guidelines)
-
-```
-                       [ 사용자 AI 코칭 요청 ]
-                                  │
-                  ┌───────────────┴───────────────┐
-                  ▼                               ▼
-       [ 필수값 누락/빈 입력 ]           [ 입력값 유효 (정상) ]
-                  │                               │
-       "선수 선택 및 메모를                      │
-        3자 이상 입력하세요"              [ Vercel /api/coach 호출 ]
-        경고 배너 출력                            │
-                                  ┌───────────────┴───────────────┐
-                                  ▼                               ▼
-                        [ Gemini API 성공 (200) ]     [ API 에러 / 키 누락 / 타임아웃 ]
-                                  │                               │
-                        구조화된 AI 코칭 리포트         [ 내장 휴리스틱 룰 엔진 가동 ]
-                        화면 출력 & 스탯 반영          안전하게 분석 리포트 완성 & 출력
-```
+### 4) 3단계 UX 실패 처리 기준
 
 1. **빈 입력 (Validation Error)**:
-   - 필수값(선수 선택, 3자 이상 메모) 미입력 시 `alert-danger` 경고 배너를 표시하고 네트워크 요청을 차단하여 불필요한 API 비용 발생 방지.
-2. **API 오류 및 키 누락 (4xx/5xx / Key Missing)**:
-   - `GEMINI_API_KEY`가 설정되지 않았거나 구글 서버 장애(500, 502), 요청 한도 초과(429) 발생 시, 서비스가 중단되지 않고 **내장 휴리스틱 룰 엔진(Heuristic Fallback)**으로 즉시 전환하여 양질의 스쿼시 분석 리포트 제공.
-3. **응답 지연 및 타임아웃 (Timeout Guardrail)**:
-   - 프론트엔드에서 `AbortController`를 이용해 **10초 타임아웃**을 설정. 10초 초과 시 로딩 스피너를 해제하고 로컬 분석 결과로 즉각 전환하여 무한 대기 방지.
+   - 선수 미선택 또는 스코어 미입력 시 경고 안내 및 요청 차단. (단, 메모는 선택 사항으로 점수만으로도 분석 가능)
+2. **API 장애 및 키 누락 (4xx/5xx)**:
+   - `GEMINI_API_KEY` 미등록 또는 Google 서버 오류 시 내장 휴리스틱 룰 엔진(`rule_based_dual_analysis`)으로 100% 자동 폴백하여 무중단 분석 제공.
+3. **지연 및 타임아웃 (10s Timeout)**:
+   - `AbortController` 10초 타임아웃 가드레일이 작동하여 로딩 스피너를 해제하고 로컬 분석 결과로 즉각 전환.
 
 ---
 
 ## 5. 데이터 모델 설계 (Data Schema)
 
-### 선수 객체 (`Player`)
+### 33인 공식 선수 객체 (`Player`)
 ```typescript
 interface Player {
   id: number;
-  name: string;
-  league: "1부" | "2부" | "3부";
-  tier: number; // 1 ~ 6
-  gender: "M" | "F";
-  ovr: number; // 종합 능력치 (40 ~ 99)
+  displayName: string;
+  league: "E1" | "E2" | "E3";
+  tier: 1 | 2 | 3;
+  gender: "male" | "female";
   stats: {
-    forehand: number;
-    backhand: number;
-    volley: number;
-    drive: number;
-    drop: number;
-    boast: number;
+    forehand: number;     // 포핸드 (드라이브 파워 & 벽 밀착)
+    backhand: number;     // 백핸드 (백코너 수비 & 리턴)
+    attackOption: number; // 공격옵션 (드롭, 닉샷, 킬샷, 발리)
+    speed: number;        // 스피드 (풋워크 & 코트 커버)
+    stamina: number;      // 체력 (랠리 지속력 & 후반 집중력)
+    composure: number;    // 침착성 (보스트 탈출 & 에러 억제)
   };
-  played: number;
-  win: number;
-  loss: number;
-  aiSummary: string;
+  statHistory: Array<{
+    round: string;
+    date: string;
+    ovr: number;
+    [statKey: string]: any;
+  }>;
+  aiDiagnosis: {
+    archetype: string; // 예: "👑 구석 찌르기 장인"
+    summary: string;
+    strengths: string[];
+    weaknesses: string[];
+    drills: string[];
+  };
 }
 ```
 
 ### 경기 대진 객체 (`Match`)
 ```typescript
 interface Match {
-  id: number;
-  date: string; // "YYYY-MM-DD"
-  league: "1부" | "2부" | "3부";
-  playerA: string;
-  playerB: string;
-  court: string; // "코트 1" | "코트 2" | "코트 3"
-  time: string; // "19:00"
-  referees: string[]; // ["심판 1", "심판 2"]
+  id: number; // 예: 20260825001
+  court: string;
+  playerAId: number;
+  playerBId: number;
+  playerAName: string;
+  playerBName: string;
+  playerALeague: "E1" | "E2" | "E3";
+  playerBLeague: "E1" | "E2" | "E3";
+  playerATier: number;
+  playerBTier: number;
+  refereeNames: string[];
   scoreA: number | null;
   scoreB: number | null;
-  status: "scheduled" | "confirmed" | "cancelled";
+  winnerId: number | null;
   memo: string | null;
+  aiFeedback: {
+    matchSummary: string;
+    winnerAnalysis: string;
+    loserAnalysis: string;
+    practiceTip: string;
+    statAdjustments: Record<string, Record<string, number>>;
+    provider: string;
+    model: string;
+  } | null;
+  status: "scheduled" | "confirmed";
 }
 ```

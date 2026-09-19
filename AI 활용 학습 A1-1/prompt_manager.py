@@ -1,13 +1,17 @@
 """A1-1 과제: VSCode 통합 터미널에서 사용하는 콘솔 프롬프트 관리자.
 
-이 프로그램은 실행 중에는 메모리에 데이터를 유지하고, 종료 후 다시 실행하면
-기본 예시 데이터로 초기화된다. 입력이 필요한 프로그램이므로 VSCode의
-Output 창이나 Debug Console이 아니라 통합 터미널에서 실행해야 한다.
+기본은 실행 중 메모리에 데이터를 유지하고, 종료 후 다시 실행하면
+기본 예시 데이터로 초기화된다. 보너스로 JSON 저장·불러오기와
+Markdown 내보내기, 수정·삭제, 조회수 기록·Top 보기를 제공한다.
+입력이 필요한 프로그램이므로 VSCode의 Output 창이나 Debug Console이
+아니라 통합 터미널에서 실행해야 한다.
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 import sys
 from typing import TypedDict
 
@@ -19,6 +23,11 @@ class Prompt(TypedDict):
     content: str
     category: str
     favorite: bool
+    view_count: int
+
+
+PROMPTS_JSON_FILE = "prompts.json"
+PROMPTS_MARKDOWN_FILE = "prompts_by_category.md"
 
 
 class UserInputCancelled(Exception):
@@ -40,60 +49,70 @@ DEFAULT_PROMPTS: list[Prompt] = [
         "content": "당신은 친절한 콘텐츠 마케터입니다. 주제를 바탕으로 독자가 이해하기 쉬운 블로그 초안을 작성하세요.",
         "category": "텍스트 생성",
         "favorite": True,
+        "view_count": 0,
     },
     {
         "title": "따뜻한 책방 포스터",
         "content": "비 오는 오후의 독립 서점을 홍보하는 따뜻한 분위기의 포스터를 제작하세요. 수채화 질감과 부드러운 조명을 사용합니다.",
         "category": "이미지 생성",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "학습 코치 페르소나",
         "content": "당신은 초보 학습자의 목표를 작은 단계로 나누고 격려하는 학습 코치입니다. 쉬운 한국어로 답변하세요.",
         "category": "페르소나",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "SNS 홍보 문구 3종",
         "content": "신제품의 핵심 장점을 바탕으로 인스타그램용 짧은 홍보 문구 3개를 서로 다른 말투로 작성하세요.",
         "category": "텍스트 생성",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "친환경 제품 상세 이미지",
         "content": "재활용 소재로 만든 텀블러를 밝은 자연광 아래에서 보여 주는 제품 상세 이미지를 제작하세요. 깨끗한 배경과 신선한 초록색 포인트를 사용합니다.",
         "category": "이미지 생성",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "15초 릴스 스토리보드",
         "content": "신입 직장인의 아침 루틴을 주제로 15초 세로형 릴스의 장면 구성, 자막, 전환 효과를 시간 순서대로 제안하세요.",
         "category": "영상 생성",
         "favorite": True,
+        "view_count": 0,
     },
     {
         "title": "제품 소개 영상 내레이션",
         "content": "무선 이어폰의 노이즈 캔슬링과 배터리 장점을 자연스럽게 소개하는 30초 분량의 한국어 내레이션을 작성하세요.",
         "category": "영상 생성",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "고객 상담 도우미 페르소나",
         "content": "당신은 고객의 불편을 먼저 공감하고, 쉬운 표현으로 해결 방법을 단계별로 안내하는 온라인 쇼핑몰 상담 도우미입니다.",
         "category": "페르소나",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "일일 업무 보고 자동화",
         "content": "아래 업무 메모를 완료·진행 중·이슈·내일 할 일 네 항목으로 정리한 일일 업무 보고서 형식으로 변환하세요.",
         "category": "자동화",
         "favorite": False,
+        "view_count": 0,
     },
     {
         "title": "주간 회고 질문",
         "content": "한 주를 돌아볼 수 있도록 잘한 점, 아쉬운 점, 배운 점, 다음 주 목표에 관한 질문 4개를 작성하세요.",
         "category": "기타",
         "favorite": False,
+        "view_count": 0,
     },
 ]
 
@@ -105,7 +124,13 @@ MENU_OPTIONS = {
     "5": "프롬프트 상세 보기",
     "6": "즐겨찾기 추가/해제",
     "7": "즐겨찾기 목록 보기",
-    "8": "종료",
+    "8": "프롬프트 삭제",
+    "9": "프롬프트 수정",
+    "10": "조회수 Top 보기",
+    "11": "JSON 저장",
+    "12": "JSON 불러오기",
+    "13": "Markdown 내보내기",
+    "14": "종료",
 }
 
 
@@ -229,6 +254,7 @@ def add_prompt(prompts: list[Prompt]) -> None:
             "content": content,
             "category": category,
             "favorite": False,
+            "view_count": 0,
         }
     )
     print(f"'{title}' 프롬프트가 추가되었습니다.")
@@ -238,9 +264,10 @@ def format_prompt_summary(number: int, prompt: Prompt) -> str:
     """목록에 출력할 프롬프트 한 줄을 만든다."""
 
     favorite_mark = "⭐" if prompt["favorite"] else "-"
+    view_count = prompt.get("view_count", 0)
     return (
         f"{number}. {prompt['title']} | 카테고리: {prompt['category']} | "
-        f"즐겨찾기: {favorite_mark}"
+        f"즐겨찾기: {favorite_mark} | 조회: {view_count}"
     )
 
 
@@ -313,7 +340,7 @@ def search_prompts(prompts: list[Prompt]) -> None:
 
 
 def show_prompt_detail(prompts: list[Prompt]) -> None:
-    """선택한 프롬프트의 모든 핵심 정보를 출력한다."""
+    """선택한 프롬프트의 모든 핵심 정보를 출력하고 조회수를 기록한다."""
 
     print("\n[ 프롬프트 상세 보기 ]")
     index = get_prompt_index(prompts)
@@ -321,10 +348,12 @@ def show_prompt_detail(prompts: list[Prompt]) -> None:
         return
 
     prompt = prompts[index]
+    prompt["view_count"] = prompt.get("view_count", 0) + 1
     favorite_status = "⭐ 즐겨찾기" if prompt["favorite"] else "- 즐겨찾기 아님"
     print(f"제목: {prompt['title']}")
     print(f"카테고리: {prompt['category']}")
     print(f"즐겨찾기: {favorite_status}")
+    print(f"조회수: {prompt['view_count']}")
     print("내용:")
     print(prompt["content"])
 
@@ -353,6 +382,145 @@ def show_favorites(prompts: list[Prompt]) -> None:
     """즐겨찾기된 프롬프트만 모아 출력한다."""
 
     show_prompt_list(get_favorite_prompts(prompts), "즐겨찾기 프롬프트")
+
+
+def delete_prompt(prompts: list[Prompt]) -> None:
+    """선택한 프롬프트를 확인 후 목록에서 삭제한다."""
+
+    print("\n[ 프롬프트 삭제 ]")
+    index = get_prompt_index(prompts)
+    if index is None:
+        return
+
+    prompt = prompts[index]
+    print(f"제목: {prompt['title']}")
+    print(f"카테고리: {prompt['category']}")
+    confirm = read_user_input("정말 삭제할까요? (y/N): ").strip().lower()
+    if confirm != "y":
+        print("삭제를 취소했습니다.")
+        return
+
+    removed = prompts.pop(index)
+    print(f"'{removed['title']}' 프롬프트를 삭제했습니다.")
+
+
+def edit_prompt(prompts: list[Prompt]) -> None:
+    """선택한 프롬프트의 제목·내용·카테고리를 수정한다."""
+
+    print("\n[ 프롬프트 수정 ]")
+    index = get_prompt_index(prompts)
+    if index is None:
+        return
+
+    prompt = prompts[index]
+    print(f"현재 제목: {prompt['title']}")
+    new_title = read_user_input("새 제목(Enter면 유지): ").strip()
+    print(f"현재 내용: {prompt['content']}")
+    new_content = read_user_input("새 내용(Enter면 유지): ").strip()
+
+    final_title = new_title if new_title else prompt["title"]
+    final_content = new_content if new_content else prompt["content"]
+    duplicate = find_duplicate_prompt(prompts, final_title, final_content)
+    if duplicate is not None and duplicate is not prompt:
+        print(f"동일한 프롬프트가 이미 존재합니다: '{duplicate['title']}'")
+        print("수정을 취소했습니다.")
+        return
+
+    print(f"현재 카테고리: {prompt['category']}")
+    change = read_user_input("카테고리를 변경할까요? (y/N): ").strip().lower()
+    final_category = choose_category() if change == "y" else prompt["category"]
+
+    prompt["title"] = final_title
+    prompt["content"] = final_content
+    prompt["category"] = final_category
+    print(f"'{prompt['title']}' 프롬프트를 수정했습니다.")
+
+
+def get_top_prompts(prompts: list[Prompt], limit: int = 5) -> list[Prompt]:
+    """조회수가 높은 순서로 프롬프트를 반환한다."""
+
+    return sorted(prompts, key=lambda item: item.get("view_count", 0), reverse=True)[:limit]
+
+
+def show_top_prompts(prompts: list[Prompt], limit: int = 5) -> None:
+    """조회수 기준 상위 프롬프트를 출력한다."""
+
+    top = get_top_prompts(prompts, limit)
+    show_prompt_list(top, f"조회수 Top {len(top)}")
+
+
+def normalize_loaded_prompt(item: dict) -> Prompt:
+    """JSON에서 읽은 항목에 빠진 필드를 기본값으로 채운다."""
+
+    return {
+        "title": str(item.get("title", "")),
+        "content": str(item.get("content", "")),
+        "category": str(item.get("category", "기타")),
+        "favorite": bool(item.get("favorite", False)),
+        "view_count": int(item.get("view_count", 0) or 0),
+    }
+
+
+def save_prompts(prompts: list[Prompt], path: str = PROMPTS_JSON_FILE) -> None:
+    """프롬프트 목록을 JSON 파일로 저장한다."""
+
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(prompts, file, ensure_ascii=False, indent=2)
+    print(f"{len(prompts)}개를 '{path}'에 저장했습니다.")
+
+
+def load_prompts(path: str = PROMPTS_JSON_FILE) -> list[Prompt]:
+    """JSON 파일에서 프롬프트 목록을 불러온다."""
+
+    with open(path, encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, list):
+        raise ValueError("프롬프트 파일 형식이 올바르지 않습니다.")
+    return [normalize_loaded_prompt(item) for item in data if isinstance(item, dict)]
+
+
+def load_prompts_into(prompts: list[Prompt], path: str = PROMPTS_JSON_FILE) -> None:
+    """JSON 파일 내용을 현재 목록에 덮어쓴다."""
+
+    try:
+        loaded = load_prompts(path)
+    except FileNotFoundError:
+        print(f"'{path}' 파일이 없습니다. 기본 데이터로 계속합니다.")
+        return
+    except (ValueError, OSError) as error:
+        print(f"불러오기에 실패했습니다: {error}")
+        return
+    prompts[:] = loaded
+    print(f"{len(loaded)}개를 '{path}'에서 불러왔습니다.")
+
+
+def export_prompts_markdown(
+    prompts: list[Prompt], path: str = PROMPTS_MARKDOWN_FILE
+) -> None:
+    """카테고리별로 묶어 Markdown 파일로 내보낸다."""
+
+    categories = get_view_categories(prompts)
+    lines = ["# 프롬프트 모음", ""]
+    for category in categories:
+        items = filter_prompts_by_category(prompts, category)
+        if not items:
+            continue
+        lines.append(f"## {category} ({len(items)}개)")
+        lines.append("")
+        for prompt in items:
+            star = "⭐" if prompt["favorite"] else "-"
+            views = prompt.get("view_count", 0)
+            lines.append(f"### {prompt['title']}")
+            lines.append("")
+            lines.append(f"- 카테고리: {category}")
+            lines.append(f"- 즐겨찾기: {star}")
+            lines.append(f"- 조회수: {views}")
+            lines.append("")
+            lines.append(str(prompt["content"]))
+            lines.append("")
+    with open(path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines))
+    print(f"{len(prompts)}개를 '{path}'에 내보냈습니다.")
 
 
 def show_menu() -> None:
@@ -397,6 +565,18 @@ def run_menu_loop(prompts: list[Prompt]) -> None:
         elif choice == "7":
             show_favorites(prompts)
         elif choice == "8":
+            delete_prompt(prompts)
+        elif choice == "9":
+            edit_prompt(prompts)
+        elif choice == "10":
+            show_top_prompts(prompts)
+        elif choice == "11":
+            save_prompts(prompts)
+        elif choice == "12":
+            load_prompts_into(prompts)
+        elif choice == "13":
+            export_prompts_markdown(prompts)
+        elif choice == "14":
             print("프롬프트 관리자를 종료합니다. 안녕히 가세요.")
             return
 

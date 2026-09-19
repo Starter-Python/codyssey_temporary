@@ -10,17 +10,24 @@ from prompt_manager import (
     UserInputCancelled,
     add_prompt,
     create_initial_prompts,
+    delete_prompt,
+    edit_prompt,
+    export_prompts_markdown,
     filter_prompts_by_category,
     find_duplicate_prompt,
     find_prompts,
     format_prompt_summary,
     get_favorite_prompts,
+    get_top_prompts,
     get_view_categories,
     is_valid_prompt_number,
+    load_prompts,
     main,
     normalize_prompt_text,
     read_user_input,
     run_menu_loop,
+    save_prompts,
+    show_prompt_detail,
 )
 
 
@@ -35,10 +42,11 @@ class PromptManagerTest(unittest.TestCase):
         for prompt in prompts:
             self.assertEqual(
                 set(prompt),
-                {"title", "content", "category", "favorite"},
+                {"title", "content", "category", "favorite", "view_count"},
             )
             self.assertIn(prompt["category"], CATEGORIES)
             self.assertIsInstance(prompt["favorite"], bool)
+            self.assertIsInstance(prompt["view_count"], int)
 
     def test_initial_prompts_are_independent_between_runs(self) -> None:
         first_run = create_initial_prompts()
@@ -51,6 +59,7 @@ class PromptManagerTest(unittest.TestCase):
                 "content": "테스트용 데이터",
                 "category": "기타",
                 "favorite": False,
+                "view_count": 0,
             }
         )
 
@@ -76,6 +85,7 @@ class PromptManagerTest(unittest.TestCase):
                 "content": "매일 업무 보고를 정리하세요.",
                 "category": "업무",
                 "favorite": False,
+                "view_count": 0,
             }
         )
 
@@ -144,7 +154,7 @@ class PromptManagerTest(unittest.TestCase):
 
     def test_menu_two_and_three_show_expected_lists(self) -> None:
         output = StringIO()
-        with patch("builtins.input", side_effect=["2", "3", "1", "8"]):
+        with patch("builtins.input", side_effect=["2", "3", "1", "14"]):
             with redirect_stdout(output):
                 run_menu_loop(create_initial_prompts())
 
@@ -154,6 +164,109 @@ class PromptManagerTest(unittest.TestCase):
         self.assertIn("10. 주간 회고 질문", result)
         self.assertIn("[ 텍스트 생성 프롬프트 ]", result)
         self.assertIn("프롬프트 관리자를 종료합니다.", result)
+
+    def test_delete_prompt_removes_item_on_confirm(self) -> None:
+        prompts = create_initial_prompts()
+        output = StringIO()
+
+        with patch("builtins.input", side_effect=["1", "y"]):
+            with redirect_stdout(output):
+                delete_prompt(prompts)
+
+        self.assertEqual(len(prompts), 9)
+        self.assertNotIn("블로그 초안 작성", [p["title"] for p in prompts])
+        self.assertIn("삭제했습니다", output.getvalue())
+
+    def test_delete_prompt_cancel_keeps_item(self) -> None:
+        prompts = create_initial_prompts()
+        output = StringIO()
+
+        with patch("builtins.input", side_effect=["2", "n"]):
+            with redirect_stdout(output):
+                delete_prompt(prompts)
+
+        self.assertEqual(len(prompts), 10)
+        self.assertIn("취소", output.getvalue())
+
+    def test_delete_prompt_empty_list_shows_guide(self) -> None:
+        output = StringIO()
+
+        with redirect_stdout(output):
+            delete_prompt([])
+
+        self.assertIn("저장된 프롬프트가 없습니다", output.getvalue())
+
+    def test_detail_view_increases_view_count(self) -> None:
+        prompts = create_initial_prompts()
+        output = StringIO()
+
+        with patch("builtins.input", side_effect=["1"]):
+            with redirect_stdout(output):
+                show_prompt_detail(prompts)
+
+        self.assertEqual(prompts[0]["view_count"], 1)
+        self.assertIn("조회수: 1", output.getvalue())
+
+    def test_top_prompts_sorted_by_view_count(self) -> None:
+        prompts = create_initial_prompts()
+        prompts[0]["view_count"] = 5
+        prompts[1]["view_count"] = 10
+
+        top = get_top_prompts(prompts, limit=2)
+
+        self.assertEqual([p["title"] for p in top], ["따뜻한 책방 포스터", "블로그 초안 작성"])
+
+    def test_edit_prompt_updates_fields(self) -> None:
+        prompts = create_initial_prompts()
+        output = StringIO()
+
+        with patch("builtins.input", side_effect=["1", "새 제목", "새 내용", "n"]):
+            with redirect_stdout(output):
+                edit_prompt(prompts)
+
+        self.assertEqual(prompts[0]["title"], "새 제목")
+        self.assertEqual(prompts[0]["content"], "새 내용")
+        self.assertIn("수정했습니다", output.getvalue())
+
+    def test_edit_prompt_empty_keeps_original(self) -> None:
+        prompts = create_initial_prompts()
+        original = dict(prompts[0])
+        output = StringIO()
+
+        with patch("builtins.input", side_effect=["1", "", "", "n"]):
+            with redirect_stdout(output):
+                edit_prompt(prompts)
+
+        self.assertEqual(prompts[0], original)
+
+    def test_save_and_load_roundtrip(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        prompts = create_initial_prompts()
+        prompts[0]["view_count"] = 3
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "prompts.json")
+            save_prompts(prompts, path)
+            loaded = load_prompts(path)
+
+        self.assertEqual(len(loaded), 10)
+        self.assertEqual(loaded[0]["title"], "블로그 초안 작성")
+        self.assertEqual(loaded[0]["view_count"], 3)
+
+    def test_export_markdown_groups_by_category(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        prompts = create_initial_prompts()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "out.md")
+            export_prompts_markdown(prompts, path)
+            text = Path(path).read_text(encoding="utf-8")
+
+        self.assertIn("# 프롬프트 모음", text)
+        self.assertIn("## 텍스트 생성", text)
+        self.assertIn("블로그 초안 작성", text)
 
     def test_noninteractive_execution_shows_terminal_help(self) -> None:
         output = StringIO()

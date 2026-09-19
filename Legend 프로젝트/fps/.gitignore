@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+fps_scores.json
+.DS_Store
+.vscode/

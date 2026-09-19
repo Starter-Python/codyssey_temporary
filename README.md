@@ -1,30 +1,20 @@
-# Manus
+# 실습환경
 
-마누스(Manus) 작업 및 프로젝트 모음 저장소입니다.
+Python·Git 기초 실습 저장소입니다.
 
----
-
-## 📁 디렉터리 구성
+## 구성
 
 ```text
-Manus/
-├── AI 활용 학습 A1-1/    # 프롬프트 매니저 및 테스트 과제
-├── AI 활용 학습 A1-2/    # 여행 플래너 API 및 카카오 연동
-├── AI 활용 학습 A1-3/        # ENTHES 스쿼시 리그(ESL) & Gemini AI 코칭 웹 서비스 (과제 A1-3 제출본)
-├── AI 활용 학습 A1-3_임시/   # 온기록(Ongirok) 서비스 및 Vercel 배포 프로젝트 (임시 보관본)
-├── ESL_Project/          # ESL 프로젝트
-├── backups/              # Manus 공식 암호화 백업 파일 보관 폴더
-│   ├── account-data-나-08-21_10-29-54.manusaccount
-│   └── tasks-data-나-08-21_10-31-26.manustask
-└── README.md
+실습환경/
+├── AI 활용 학습 A1-1/  # 콘솔 프롬프트 관리자 (추가·검색·즐겨찾기·수정·삭제·JSON·Markdown)
+└── AI 활용 학습 A1-2/  # 여행 플래너
 ```
 
----
+## 시작
 
-## ⚠️ Manus 백업 복구 안내
+```bash
+cd "AI 활용 학습 A1-1"
+python3 prompt_manager.py
+```
 
-* **백업 파일 (`backups/`)**:
-  - `account-data-*.manusaccount` (계정 인증 데이터)
-  - `tasks-data-*.manustask` (전체 태스크 및 데이터)
-* **복구 오픈 일정**: **2026년 8월 25일(화) 오전 09:00 이후**
-* **복구 포털**: [manus.im/backup](https://manus.im/backup) 접속 후 계정 파일 및 태스크 파일을 차례대로 업로드하여 복원 진행
+자세한 실행·기능·테스트는 [`AI 활용 학습 A1-1/README.md`](AI%20활용%20학습%20A1-1/README.md)를 보세요.

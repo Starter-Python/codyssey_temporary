@@ -52,7 +52,7 @@ Copy-Item .env.example .env
 ```dotenv
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 KAKAO_REST_API_KEY=YOUR_KAKAO_REST_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 ```
 
 `travel_planner.py`는 시작할 때 `load_dotenv(BASE_DIR / ".env")`를 실행하고, `os.getenv("GEMINI_API_KEY")`와 `os.getenv("KAKAO_REST_API_KEY")`로 키를 읽습니다. 따라서 키가 프로그램 코드에 하드코딩되지 않습니다.
@@ -118,7 +118,7 @@ Kakao Local API가 정상 작동하면 콘솔에 다음과 비슷한 결과가 �
 | 모델명을 변경해야 할 때 | 선택적으로 `GEMINI_MODEL` |
 | Kakao 맛집 검색 실행 | 별도로 `KAKAO_REST_API_KEY` |
 
-현재 기본 모델은 `gemini-2.5-flash`입니다. 계정의 무료 등급에서 이 모델을 사용할 수 없거나 요청 제한에 도달하면, Google AI Studio에서 사용 가능한 모델로 `GEMINI_MODEL`을 바꾸거나 제한이 해제될 때까지 기다립니다.
+현재 기본 모델은 `gemini-3.5-flash`입니다. 계정의 무료 등급에서 이 모델을 사용할 수 없거나 요청 제한에 도달하면, Google AI Studio에서 사용 가능한 모델로 `GEMINI_MODEL`을 바꾸거나 제한이 해제될 때까지 기다립니다.
 
 ## 8. 키가 노출되었을 때의 조치
 

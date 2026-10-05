@@ -29,6 +29,7 @@ KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+COPA_URL = "https://copa.codyssey.kr/v1/chat/completions"
 TIMEOUT_SECONDS = 20
 RECOMMENDATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -178,16 +179,24 @@ def build_llm_settings() -> tuple[str, str, str]:
         if not openrouter_key:
             raise PlannerError("OPENROUTER_API_KEY가 설정되지 않았습니다. .env에 OPENROUTER_API_KEY를 설정하세요.")
         return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    if provider == "copa":
+        copa_key = os.getenv("COPA_API_KEY")
+        if not copa_key:
+            raise PlannerError("COPA_API_KEY가 설정되지 않았습니다. .env에 COPA_API_KEY를 설정하세요.")
+        return "copa", copa_key, os.getenv("COPA_MODEL", "gemini-3-flash")
     if provider == "gemini":
         api_key, model = build_gemini_settings()
         return "gemini", api_key, model
 
-    # LLM_PROVIDER 미설정: Groq → OpenRouter → Gemini 순으로 키가 있으면 사용
+    # LLM_PROVIDER 미설정: Groq → OpenRouter → Copa → Gemini 순으로 키가 있으면 사용
     if groq_key:
         return "groq", groq_key, os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
         return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    copa_key = os.getenv("COPA_API_KEY")
+    if copa_key:
+        return "copa", copa_key, os.getenv("COPA_MODEL", "gemini-3-flash")
     api_key, model = build_gemini_settings()
     return "gemini", api_key, model
 
@@ -231,6 +240,48 @@ def request_openrouter(
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise GeminiRequestError(f"response parse error: {exc}") from exc
     raise GeminiRequestError("OpenRouter 요청 재시도 한도를 초과했습니다.")
+
+
+def request_copa(
+    api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None
+) -> str:
+    """copa.codyssey.kr(OpenAI 호환 엔드포인트)에 요청을 보냅니다."""
+    if requests is None:
+        raise PlannerError("외부 API 호출을 위해 requests 패키지가 필요합니다. pip install -r requirements.txt를 실행하세요.")
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "당신은 한국 국내 여행 추천 전문가입니다. 사용자의 지시를 충실히 따르고, 요구된 형식(JSON 또는 Markdown)으로만 답변하세요."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.5,
+        "max_tokens": max_output_tokens,
+    }
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                COPA_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=TIMEOUT_SECONDS,
+            )
+            if response.status_code in (429, 503) and attempt < 2:
+                print(f"  - Copa 일시적 오류(HTTP {response.status_code}): 3초 후 재시도합니다.")
+                time.sleep(3)
+                continue
+            if response.status_code >= 400:
+                raise GeminiRequestError(f"HTTP {response.status_code}", response.status_code)
+            data = response.json()
+            return str(data["choices"][0]["message"]["content"])
+        except GeminiRequestError:
+            raise
+        except requests.Timeout as exc:
+            raise GeminiRequestError(f"timeout after {TIMEOUT_SECONDS} seconds") from exc
+        except requests.RequestException as exc:
+            raise GeminiRequestError(f"network error: {exc}") from exc
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GeminiRequestError(f"response parse error: {exc}") from exc
+    raise GeminiRequestError("Copa 요청 재시도 한도를 초과했습니다.")
 
 
 def extract_gemini_text(payload: dict[str, Any]) -> str:
@@ -338,7 +389,7 @@ JSON 객체만 반환하세요: recommended_city(문자열), weather(문자열),
     repair = "설명이나 마크다운 코드블록 없이 recommended_city, weather, events, reason 네 키만 가진 유효한 JSON 객체만 반환하세요."
     for attempt in range(3):
         try:
-            raw_text = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_groq)(
+            raw_text = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_copa if provider == "copa" else request_groq)(
                 api_key, model, initial if attempt == 0 else repair, max_output_tokens=700, response_schema=RECOMMENDATION_SCHEMA
             )
             json_text = extract_json_object(raw_text)
@@ -463,7 +514,7 @@ def create_report(api_key: str, model: str, date: str, recommendation: dict[str,
 
 반드시 추천 지역, 추천 이유, 날씨 요약, 행사/축제, 맛집 추천, 1일 일정 제안, 오류 요약(errors) 제목을 포함하세요. 맛집 목록이 비어 있으면 맛집 추천에 정확히 '데이터 없음'이라고 쓰고, 행사는 확정이 아닌 후보임을 밝히세요."""
     try:
-        report = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_groq)(api_key, model, prompt, max_output_tokens=1400)
+        report = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_copa if provider == "copa" else request_groq)(api_key, model, prompt, max_output_tokens=1400)
         return f"# {date} 국내 여행 추천 리포트\n\n{report.lstrip('# ').strip()}\n"
     except (GeminiRequestError, ValueError) as exc:
         add_error(errors, "report_generation", "GEMINI_REPORT_ERROR", str(exc))
@@ -513,11 +564,27 @@ def _is_quota_or_overload_error(exc: Exception) -> bool:
 
 
 def _fallback_provider(provider: str) -> tuple[str, str, str] | None:
-    """현재 제공자가 안 되면 대신 쓸 수 있는 다른 제공자를 찾습니다. 키가 없으면 None."""
-    if provider == "gemini" and os.getenv("OPENROUTER_API_KEY"):
-        return "openrouter", os.getenv("OPENROUTER_API_KEY") or "", os.getenv("OPENROUTER_MODEL", "openrouter/free")
-    if provider == "openrouter" and os.getenv("GEMINI_API_KEY"):
-        return "gemini", os.getenv("GEMINI_API_KEY") or "", os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    """현재 제공자가 안 되면 대신 쓸 수 있는 다른 제공자를 찾습니다. 키가 없으면 None.
+    폴백 순서: Gemini → OpenRouter(무료 라우터) → Copa(OpenAI 호환)"""
+    if provider == "gemini":
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+            return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        copa_key = os.getenv("COPA_API_KEY")
+        if copa_key:
+            return "copa", copa_key, os.getenv("COPA_MODEL", "gpt-5-mini")
+    if provider == "openrouter":
+        copa_key = os.getenv("COPA_API_KEY")
+        if copa_key:
+            return "copa", copa_key, os.getenv("COPA_MODEL", "gpt-5-mini")
+        api_key, model = build_gemini_settings()
+        return "gemini", api_key, model
+    if provider == "copa":
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+            return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        api_key, model = build_gemini_settings()
+        return "gemini", api_key, model
     return None
 
 
@@ -550,16 +617,21 @@ def main() -> int:
 
     try:
         provider, api_key, model = build_llm_settings()
-        try:
-            recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)
-        except (PlannerError, GeminiRequestError) as exc:
-            # Gemini 한도/과부하 → OpenRouter로, OpenRouter 한도 → Gemini로 자동 전환
-            fallback = _fallback_provider(provider) if _is_quota_or_overload_error(exc) else None
-            if fallback is None:
-                raise
-            provider, api_key, model = fallback
-            print(f"  - 현재 제공자 장애/한도로 인해 {provider}(으)로 자동 전환합니다.")
-            recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)
+        # 3중 폴백: 현재 제공자가 429/503으로 실패하면 다른 제공자로 순서대로 전환
+        tried = {provider}
+        while True:
+            try:
+                recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)
+                break
+            except (PlannerError, GeminiRequestError) as exc:
+                if not _is_quota_or_overload_error(exc):
+                    raise
+                fallback = _fallback_provider(provider)
+                if fallback is None or fallback[0] in tried:
+                    raise
+                provider, api_key, model = fallback
+                tried.add(provider)
+                print(f"  - 현재 제공자 장애/한도로 인해 {provider}(으)로 자동 전환합니다.")
         data_path, report_path = write_results(args.travel_date, recommendation, places, errors, report)
         print("  - 리포트 생성 완료")
         print(f"완료! {report_path.relative_to(BASE_DIR)} 및 {data_path.relative_to(BASE_DIR)}를 확인하세요.")

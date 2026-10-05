@@ -469,28 +469,41 @@ def search_restaurants(city: str, errors: list[dict[str, str]]) -> list[dict[str
 
 
 def fallback_report(date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]]) -> str:
-    restaurants = "\n".join(f"- **{p['name']}** — {p['address']}" for p in places) or "- 데이터 없음"
+    """LLM 리포트 생성 실패 시 확보한 데이터로 만드는 대체 리포트입니다.
+    원래 LLM 리포트 형식(맛집 링크·카테고리, 상세 일정)에 가깝게 맞춥니다."""
+    if places:
+        restaurants = "\n\n".join(
+            f"{i}. **{p['name']}**\n"
+            f"   - 주소: {p['address']}\n"
+            f"   - 카테고리: {p['category']}\n"
+            f"   - 링크: {p['url']}"
+            for i, p in enumerate(places, 1)
+        )
+    else:
+        restaurants = "- 데이터 없음"
     events = "\n".join(f"- {event}" for event in recommendation["events"]) or "- 데이터 없음"
     errors_text = "\n".join(f"- [{e['step']}/{e['type']}] {e['message']}" for e in errors) or "- 없음"
     return f"""# {date} 국내 여행 추천 리포트
 
-> 최종 Gemini 리포트 생성에 실패해 확보한 데이터로 만든 대체 리포트입니다.
+> 최종 LLM 리포트 생성에 실패해 확보한 데이터로 만든 대체 리포트입니다.
 
 ## 추천 지역
 
-**{recommendation['recommended_city']}**
+- {recommendation['recommended_city']}
 
 ## 추천 이유
 
-{recommendation['reason']}
+- {recommendation['reason']}
 
 ## 날씨 요약
 
-{recommendation['weather']}
+- {recommendation['weather']}
 
 ## 행사/축제
 
 {events}
+
+> ※ 위 행사는 확정이 아닌 후보 정보입니다.
 
 ## 맛집 추천
 
@@ -498,7 +511,14 @@ def fallback_report(date: str, recommendation: dict[str, Any], places: list[dict
 
 ## 1일 일정 제안
 
-오전에는 대표 관광지와 산책 코스를 둘러보고, 오후에는 지역 문화 공간 또는 카페를 방문합니다. 저녁에는 맛집 목록을 확인해 식사하고 야간 산책으로 마무리합니다.
+- **오전**
+  - {recommendation['recommended_city']} 대표 관광지 및 산책 코스 방문
+- **점심**
+  - 맛집 목록에서 지역 특색 식당에서 식사
+- **오후**
+  - 지역 문화 공간 또는 카페 방문
+- **저녁**
+  - 맛집 목록을 확인해 식사하고 야간 산책으로 마무리
 
 ## 오류 요약(errors)
 
@@ -512,14 +532,25 @@ def create_report(api_key: str, model: str, date: str, recommendation: dict[str,
 
 {source}
 
-반드시 추천 지역, 추천 이유, 날씨 요약, 행사/축제, 맛집 추천, 1일 일정 제안, 오류 요약(errors) 제목을 포함하세요. 맛집 목록이 비어 있으면 맛집 추천에 정확히 '데이터 없음'이라고 쓰고, 행사는 확정이 아닌 후보임을 밝히세요."""
-    try:
-        report = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_copa if provider == "copa" else request_groq)(api_key, model, prompt, max_output_tokens=1400)
-        return f"# {date} 국내 여행 추천 리포트\n\n{report.lstrip('# ').strip()}\n"
-    except (GeminiRequestError, ValueError) as exc:
-        add_error(errors, "report_generation", "GEMINI_REPORT_ERROR", str(exc))
-        print("  - 최종 Gemini 리포트 생성 실패: 대체 Markdown 리포트를 저장합니다.")
-        return fallback_report(date, recommendation, places, errors)
+반드시 추천 지역, 추천 이유, 날씨 요약, 행사/축제, 맛집 추천, 1일 일정 제안, 오류 요약(errors) 제목을 포함하세요. 맛집 목록이 비어 있으면 맛집 추천에 정확히 '데이터 없음'이라고 쓰고, 행사는 확정이 아닌 후보임을 밝히세요. 맛집은 번호, 이름, 주소, 카테고리, 링크(URL)를 포함해 주세요."""
+    # 현재 제공자가 실패하면 다른 제공자로 재시도 (폴백)
+    tried = {provider}
+    while True:
+        try:
+            report = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_copa if provider == "copa" else request_groq)(api_key, model, prompt, max_output_tokens=1400)
+            return f"# {date} 국내 여행 추천 리포트\n\n{report.lstrip('# ').strip()}\n"
+        except (GeminiRequestError, ValueError) as exc:
+            if not _is_quota_or_overload_error(exc):
+                break  # 한도/과부하가 아니면 즉시 대체 리포트로
+            fallback = _fallback_provider(provider)
+            if fallback is None or fallback[0] in tried:
+                break
+            provider, api_key, model = fallback
+            tried.add(provider)
+            print(f"  - 리포트 생성 실패: {provider}(으)로 재시도합니다.")
+    add_error(errors, "report_generation", "GEMINI_REPORT_ERROR", str(exc))
+    print("  - 최종 LLM 리포트 생성 실패: 대체 Markdown 리포트를 저장합니다.")
+    return fallback_report(date, recommendation, places, errors)
 
 
 def load_cached_data(date: str) -> dict[str, Any] | None:

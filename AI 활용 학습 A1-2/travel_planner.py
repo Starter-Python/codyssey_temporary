@@ -250,6 +250,8 @@ def request_gemini(
     if requests is None:
         raise PlannerError("외부 API 호출을 위해 requests 패키지가 필요합니다. pip install -r requirements.txt를 실행하세요.")
     generation: dict[str, Any] = {"temperature": 0.5, "maxOutputTokens": max_output_tokens}
+    # thinking 토큰이 maxOutputTokens를 잡아먹어 본문이 잘리는 문제 방지
+    generation["thinkingConfig"] = {"thinkingBudget": 0}
     if response_schema:
         generation.update({"responseMimeType": "application/json", "responseSchema": response_schema})
     payload = {

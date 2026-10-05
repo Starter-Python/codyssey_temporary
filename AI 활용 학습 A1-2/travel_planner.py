@@ -493,6 +493,34 @@ def write_results(date: str, recommendation: dict[str, Any], places: list[dict[s
     return data_path, report_path
 
 
+def run_pipeline(provider: str, api_key: str, model: str, travel_date: str, errors: list[dict[str, str]]) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """선택된 제공자로 [1/3] → [2/3] → [3/3] 전체 파이프라인을 실행합니다."""
+    print(f"[1/3] 1차 추천 생성 중({provider})...")
+    recommendation = create_recommendation(api_key, model, travel_date, errors, provider)
+    print(f"  - recommended_city: {recommendation['recommended_city']}")
+    print("[2/3] 맛집 검색 중(Kakao Local API)...")
+    places = search_restaurants(recommendation["recommended_city"], errors)
+    print(f"  - 맛집 {len(places)}곳 검색 완료")
+    print(f"[3/3] 최종 리포트 생성 중({provider})...")
+    report = create_report(api_key, model, travel_date, recommendation, places, errors, provider)
+    return recommendation, places, report
+
+
+def _is_quota_or_overload_error(exc: Exception) -> bool:
+    """429(요청 제한) 또는 503(과부하) 성격의 오류인지 확인합니다. 전환 대상 여부 판단에 씁니다."""
+    text = str(exc)
+    return any(keyword in text for keyword in ("429", "503", "제한", "쿼터", "과부하"))
+
+
+def _fallback_provider(provider: str) -> tuple[str, str, str] | None:
+    """현재 제공자가 안 되면 대신 쓸 수 있는 다른 제공자를 찾습니다. 키가 없으면 None."""
+    if provider == "gemini" and os.getenv("OPENROUTER_API_KEY"):
+        return "openrouter", os.getenv("OPENROUTER_API_KEY") or "", os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    if provider == "openrouter" and os.getenv("GEMINI_API_KEY"):
+        return "gemini", os.getenv("GEMINI_API_KEY") or "", os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    return None
+
+
 def main() -> int:
     args = parse_args()
     load_dotenv(BASE_DIR / ".env")
@@ -522,14 +550,16 @@ def main() -> int:
 
     try:
         provider, api_key, model = build_llm_settings()
-        print(f"[1/3] 1차 추천 생성 중({provider})...")
-        recommendation = create_recommendation(api_key, model, args.travel_date, errors, provider)
-        print(f"  - recommended_city: {recommendation['recommended_city']}")
-        print("[2/3] 맛집 검색 중(Kakao Local API)...")
-        places = search_restaurants(recommendation["recommended_city"], errors)
-        print(f"  - 맛집 {len(places)}곳 검색 완료")
-        print(f"[3/3] 최종 리포트 생성 중({provider})...")
-        report = create_report(api_key, model, args.travel_date, recommendation, places, errors, provider)
+        try:
+            recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)
+        except (PlannerError, GeminiRequestError) as exc:
+            # Gemini 한도/과부하 → OpenRouter로, OpenRouter 한도 → Gemini로 자동 전환
+            fallback = _fallback_provider(provider) if _is_quota_or_overload_error(exc) else None
+            if fallback is None:
+                raise
+            provider, api_key, model = fallback
+            print(f"  - 현재 제공자 장애/한도로 인해 {provider}(으)로 자동 전환합니다.")
+            recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)
         data_path, report_path = write_results(args.travel_date, recommendation, places, errors, report)
         print("  - 리포트 생성 완료")
         print(f"완료! {report_path.relative_to(BASE_DIR)} 및 {data_path.relative_to(BASE_DIR)}를 확인하세요.")

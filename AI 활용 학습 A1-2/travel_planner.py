@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-date", "--date", dest="travel_date", required=True, metavar="YYYY-MM-DD", help="여행 날짜")
-    parser.add_argument("--cached", action="store_true", help="저장된 원본 데이터(JSON)가 있으면 API 재호출 없이 캐시를 재사용합니다 (보너스 과제).")
+    parser.add_argument("--cached", action="store_true", help="저장된 원본 데이터(JSON)가 있으면 API 재호출 없이 캐시를 재사용합니다.")
     parser.add_argument("--refresh", action="store_true", help="기존 캐시를 무시하고 API를 새로 호출합니다.")
     args = parser.parse_args()
     try:
@@ -330,7 +330,7 @@ def create_report(api_key: str, model: str, date: str, recommendation: dict[str,
 
 
 def load_cached_data(date: str) -> dict[str, Any] | None:
-    """기존 저장된 원본 데이터(JSON)가 있으면 읽어와 반환 (보너스 과제: 결과 캐싱)."""
+    """기존 저장된 원본 데이터(JSON)가 있으면 읽어와 반환 (항목 4: 결과 캐싱 전략)."""
     data_path = RESULTS_DIR / f"{date}_travel_data.json"
     if not data_path.exists():
         return None
@@ -356,13 +356,13 @@ def main() -> int:
     load_dotenv(BASE_DIR / ".env")
     errors: list[dict[str, str]] = []
 
-    # 보너스 과제: 결과 캐싱 검사
+    # 항목 4: 결과 캐싱 검사
     cached_data = None
     if args.cached or (not args.refresh and (RESULTS_DIR / f"{args.travel_date}_travel_data.json").exists()):
         cached_data = load_cached_data(args.travel_date)
 
     if cached_data:
-        print(f"[보너스 과제: 캐시 재사용] {args.travel_date} 저장된 원본 JSON을 활용하여 외부 API 호출을 생략합니다.")
+        print(f"[캐시 재사용] {args.travel_date} 저장된 원본 JSON을 활용하여 외부 API 호출을 생략합니다.")
         print("  - (새로고침을 원할 경우 --refresh 옵션을 사용하세요)")
         recommendation = cached_data["recommendation"]
         places = cached_data["restaurants"]

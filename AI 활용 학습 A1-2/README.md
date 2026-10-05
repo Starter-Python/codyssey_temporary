@@ -35,7 +35,7 @@ python travel_planner.py -date "2026-10-03"
 # 또는
 python travel_planner.py --date "2026-10-03"
 
-# [보너스 과제] 기존 저장된 원본 데이터가 있다면 외부 API 호출 없이 캐시 재사용
+# 기존 저장된 원본 데이터가 있다면 외부 API 호출 없이 캐시 재사용
 python travel_planner.py -date "2026-10-03" --cached
 
 # 기존 캐시를 무시하고 API를 새로 강제 호출

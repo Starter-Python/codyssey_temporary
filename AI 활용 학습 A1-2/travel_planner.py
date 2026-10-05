@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ BASE_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = BASE_DIR / "results"
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 TIMEOUT_SECONDS = 20
 RECOMMENDATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -36,7 +39,6 @@ RECOMMENDATION_SCHEMA: dict[str, Any] = {
         "reason": {"type": "string"},
     },
     "required": ["recommended_city", "weather", "events", "reason"],
-    "additionalProperties": False,
 }
 
 
@@ -57,14 +59,27 @@ def parse_args() -> argparse.Namespace:
         description="Gemini API와 Kakao Local API로 국내 여행 추천 리포트를 생성합니다.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("-date", "--date", dest="travel_date", required=True, metavar="YYYY-MM-DD", help="여행 날짜")
+    parser.add_argument("-date", "--date", dest="travel_date", required=False, default=None, metavar="YYYY-MM-DD", help="여행 날짜 (생략하면 실행 중에 입력받습니다)")
     parser.add_argument("--cached", action="store_true", help="저장된 원본 데이터(JSON)가 있으면 API 재호출 없이 캐시를 재사용합니다.")
     parser.add_argument("--refresh", action="store_true", help="기존 캐시를 무시하고 API를 새로 호출합니다.")
     args = parser.parse_args()
-    try:
-        datetime.strptime(args.travel_date, "%Y-%m-%d")
-    except ValueError:
-        parser.error("-date/--date는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.")
+    if args.travel_date is None:
+        while True:
+            try:
+                args.travel_date = input("여행 날짜를 입력하세요 (YYYY-MM-DD): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                parser.error("날짜가 입력되지 않았습니다.")
+            try:
+                datetime.strptime(args.travel_date, "%Y-%m-%d")
+                break
+            except ValueError:
+                print("  - YYYY-MM-DD 형식의 실제 날짜로 다시 입력하세요.")
+    else:
+        try:
+            datetime.strptime(args.travel_date, "%Y-%m-%d")
+        except ValueError:
+            parser.error("-date/--date는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.")
     return args
 
 
@@ -109,7 +124,7 @@ def extract_json_object(raw_text: str) -> str:
 
 def redact_secrets(message: str) -> str:
     safe = str(message)
-    for name in ("GEMINI_API_KEY", "KAKAO_REST_API_KEY"):
+    for name in ("GEMINI_API_KEY", "KAKAO_REST_API_KEY", "OPENROUTER_API_KEY"):
         if key := os.getenv(name):
             safe = safe.replace(key, "[REDACTED]")
     return re.sub(r"(?:AIza|sk-)[A-Za-z0-9_-]+", "[REDACTED]", safe)
@@ -122,6 +137,12 @@ def add_error(errors: list[dict[str, str]], step: str, kind: str, message: str) 
 def validate_recommendation(data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("추천 결과의 최상위 형식이 객체가 아닙니다.")
+    if "recommended_city" not in data and len(data) == 1:
+        only = next(iter(data.values()))
+        if isinstance(only, dict):
+            data = only
+    if isinstance(data.get("events"), str):
+        data["events"] = [s.strip() for s in data["events"].split(",") if s.strip()]
     required = {"recommended_city": str, "weather": str, "events": list, "reason": str}
     for name, value_type in required.items():
         if not isinstance(data.get(name), value_type):
@@ -141,7 +162,75 @@ def build_gemini_settings() -> tuple[str, str]:
             "export GEMINI_API_KEY='YOUR_KEY'를 실행한 뒤 다시 시도하세요."
         )
     # 무료 등급 사용 가능 모델은 계정·시점별로 다를 수 있어 환경변수로 바꿀 수 있다.
-    return api_key, os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    return api_key, os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+
+def build_llm_settings() -> tuple[str, str, str]:
+    """LLM 제공자를 결정한다."""
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    groq_key = os.getenv("GROQ_API_KEY")
+    if provider == "groq":
+        if not groq_key:
+            raise PlannerError("GROQ_API_KEY가 설정되지 않았습니다. .env에 GROQ_API_KEY를 설정하세요.")
+        return "groq", groq_key, os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    if provider == "openrouter":
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if not openrouter_key:
+            raise PlannerError("OPENROUTER_API_KEY가 설정되지 않았습니다. .env에 OPENROUTER_API_KEY를 설정하세요.")
+        return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    if provider == "gemini":
+        api_key, model = build_gemini_settings()
+        return "gemini", api_key, model
+
+    # LLM_PROVIDER 미설정: Groq → OpenRouter → Gemini 순으로 키가 있으면 사용
+    if groq_key:
+        return "groq", groq_key, os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_key:
+        return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    api_key, model = build_gemini_settings()
+    return "gemini", api_key, model
+
+
+def request_openrouter(
+    api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None
+) -> str:
+    if requests is None:
+        raise PlannerError("외부 API 호출을 위해 requests 패키지가 필요합니다. pip install -r requirements.txt를 실행하세요.")
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "당신은 한국 국내 여행 추천 전문가입니다. 사용자의 지시를 충실히 따르고, 요구된 형식(JSON 또는 Markdown)으로만 답변하세요."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.5,
+        "max_tokens": max_output_tokens,
+    }
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=TIMEOUT_SECONDS,
+            )
+            if response.status_code in (429, 503) and attempt < 2:
+                print(f"  - OpenRouter 일시적 오류(HTTP {response.status_code}): 3초 후 재시도합니다.")
+                time.sleep(3)
+                continue
+            if response.status_code >= 400:
+                raise GeminiRequestError(f"HTTP {response.status_code}", response.status_code)
+            data = response.json()
+            return str(data["choices"][0]["message"]["content"])
+        except GeminiRequestError:
+            raise
+        except requests.Timeout as exc:
+            raise GeminiRequestError(f"timeout after {TIMEOUT_SECONDS} seconds") from exc
+        except requests.RequestException as exc:
+            raise GeminiRequestError(f"network error: {exc}") from exc
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GeminiRequestError(f"response parse error: {exc}") from exc
+    raise GeminiRequestError("OpenRouter 요청 재시도 한도를 초과했습니다.")
 
 
 def extract_gemini_text(payload: dict[str, Any]) -> str:
@@ -162,59 +251,110 @@ def request_gemini(
         raise PlannerError("외부 API 호출을 위해 requests 패키지가 필요합니다. pip install -r requirements.txt를 실행하세요.")
     generation: dict[str, Any] = {"temperature": 0.5, "maxOutputTokens": max_output_tokens}
     if response_schema:
-        generation.update({"responseMimeType": "application/json", "responseJsonSchema": response_schema})
+        generation.update({"responseMimeType": "application/json", "responseSchema": response_schema})
     payload = {
-        "systemInstruction": {"parts": [{"text": "제공된 입력에만 근거해 한국어 여행 정보를 정확히 작성하세요."}]},
+        "systemInstruction": {"parts": [{"text": "당신은 한국 국내 여행 추천 전문가입니다. 사용자의 지시를 충실히 따르고, 요구된 형식(JSON 또는 Markdown)으로만 답변하세요."}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": generation,
     }
-    try:
-        response = requests.post(
-            GEMINI_URL.format(model=model),
-            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-            json=payload,
-            timeout=TIMEOUT_SECONDS,
-        )
-        if response.status_code >= 400:
-            raise GeminiRequestError(f"HTTP {response.status_code}", response.status_code)
-        return extract_gemini_text(response.json())
-    except GeminiRequestError:
-        raise
-    except requests.Timeout as exc:
-        raise GeminiRequestError(f"timeout after {TIMEOUT_SECONDS} seconds") from exc
-    except requests.RequestException as exc:
-        raise GeminiRequestError(f"network error: {exc}") from exc
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise GeminiRequestError(f"response parse error: {exc}") from exc
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                GEMINI_URL.format(model=model),
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json=payload,
+                timeout=TIMEOUT_SECONDS,
+            )
+            if response.status_code == 503 and attempt < 2:
+                print("  - Gemini 일시적 과부하(HTTP 503): 3초 후 재시도합니다.")
+                time.sleep(3)
+                continue
+            if response.status_code >= 400:
+                raise GeminiRequestError(f"HTTP {response.status_code}", response.status_code)
+            return extract_gemini_text(response.json())
+        except GeminiRequestError:
+            raise
+        except requests.Timeout as exc:
+            raise GeminiRequestError(f"timeout after {TIMEOUT_SECONDS} seconds") from exc
+        except requests.RequestException as exc:
+            raise GeminiRequestError(f"network error: {exc}") from exc
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise GeminiRequestError(f"response parse error: {exc}") from exc
+    raise GeminiRequestError("Gemini 요청 재시도 한도를 초과했습니다.")
 
 
-def create_recommendation(api_key: str, model: str, travel_date: str, errors: list[dict[str, str]]) -> dict[str, Any]:
-    initial = f"""여행 날짜는 {travel_date}입니다. 국내 여행지 한 곳을 추천하세요.
+def request_groq(
+    api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None
+) -> str:
+    if requests is None:
+        raise PlannerError("requests 패키지가 필요합니다. pip install -r requirements.txt")
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "당신은 한국 국내 여행 추천 전문가입니다. 사용자의 지시를 충실히 따르고, 요구된 형식(JSON 또는 Markdown)으로만 답변하세요."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.5,
+        "max_tokens": max_output_tokens,
+    }
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                GROQ_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=TIMEOUT_SECONDS,
+            )
+            if response.status_code in (429, 503) and attempt < 2:
+                print(f"  - Groq 일시적 오류(HTTP {response.status_code}): 3초 후 재시도합니다.")
+                time.sleep(3)
+                continue
+            if response.status_code >= 400:
+                raise GeminiRequestError(f"HTTP {response.status_code}", response.status_code)
+            data = response.json()
+            return str(data["choices"][0]["message"]["content"])
+        except GeminiRequestError:
+            raise
+        except requests.Timeout as exc:
+            raise GeminiRequestError(f"timeout after {TIMEOUT_SECONDS} seconds") from exc
+        except requests.RequestException as exc:
+            raise GeminiRequestError(f"network error: {exc}") from exc
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GeminiRequestError(f"response parse error: {exc}") from exc
+    raise GeminiRequestError("Groq 요청 재시도 한도를 초과했습니다.")
+
+
+def create_recommendation(api_key: str, model: str, travel_date: str, errors: list[dict[str, str]], provider: str = "gemini") -> dict[str, Any]:
+    month = int(travel_date.split("-")[1])
+    season = "봄" if month in (3, 4, 5) else "여름" if month in (6, 7, 8) else "가을" if month in (9, 10, 11) else "겨울"
+    initial = f"""여행 날짜는 {travel_date}입니다. 이 날짜는 {season}에 해당합니다.
+같은 계절이라도 매번 다른 지역을 선정할 수 있도록, {season} 시기에 실제로 방문객이 많은 지역 중 하나를 다양하게 추천하세요.
 도/광역 단위(예: 강원도, 경기도)가 아닌 시/군/구 단위의 구체적인 도시명(예: 제주, 강릉, 경주, 여수)을 추천하세요.
+추천 근거(reason)에는 반드시 해당 계절({season})의 날씨 특징과 그 계절에 어울리는 이유를 포함하세요.
 실시간 예보·확정 행사가 아닌 일반적 계절 경향과 행사 후보를 제시하세요.
 JSON 객체만 반환하세요: recommended_city(문자열), weather(문자열), events(문자열 배열 1~3개), reason(2~4문장 문자열)."""
     repair = "설명이나 마크다운 코드블록 없이 recommended_city, weather, events, reason 네 키만 가진 유효한 JSON 객체만 반환하세요."
-    for attempt in range(2):
+    for attempt in range(3):
         try:
-            raw_text = request_gemini(
+            raw_text = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_groq)(
                 api_key, model, initial if attempt == 0 else repair, max_output_tokens=700, response_schema=RECOMMENDATION_SCHEMA
             )
             json_text = extract_json_object(raw_text)
             return validate_recommendation(json.loads(json_text))
         except (json.JSONDecodeError, ValueError) as exc:
-            if attempt == 0:
-                print("  - Gemini JSON 검증 실패: 형식을 보정하여 1회 재시도합니다.")
+            if attempt < 2:
+                print("  - JSON 검증 실패: 형식을 보정하여 재시도합니다.")
                 continue
             add_error(errors, "recommendation", "JSON_PARSE_ERROR", str(exc))
-            raise PlannerError("Gemini 추천 JSON을 생성하지 못했습니다. 잠시 후 다시 시도하세요.") from exc
+            raise PlannerError("LLM 추천 JSON을 생성하지 못했습니다. 잠시 후 다시 시도하세요.") from exc
         except GeminiRequestError as exc:
             status = exc.status_code
             kind = "AUTH_ERROR" if status in (401, 403) else "QUOTA_ERROR" if status == 429 else "NETWORK_OR_API_ERROR"
             add_error(errors, "recommendation", kind, str(exc))
             if status == 429:
-                raise PlannerError("Gemini 무료 등급의 요청 제한 또는 쿼터를 확인하세요(HTTP 429).") from exc
+                raise PlannerError("LLM 무료 모델의 요청 제한 또는 쿼터를 확인하세요(HTTP 429). 잠시 후 다시 시도하거나 다른 모델을 사용하세요.") from exc
             if status in (401, 403):
-                raise PlannerError(f"Gemini API 키 또는 프로젝트 설정을 확인하세요(HTTP {status}).") from exc
+                raise PlannerError(f"LLM API 키 또는 설정을 확인하세요(HTTP {status}).") from exc
             raise PlannerError("Gemini API 연결 또는 응답 처리에 실패했습니다.") from exc
     raise PlannerError("Gemini 추천 생성 재시도 한도를 초과했습니다.")
 
@@ -313,7 +453,7 @@ def fallback_report(date: str, recommendation: dict[str, Any], places: list[dict
 """
 
 
-def create_report(api_key: str, model: str, date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]]) -> str:
+def create_report(api_key: str, model: str, date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]], provider: str = "gemini") -> str:
     source = json.dumps({"recommendation": recommendation, "restaurants": places, "errors": errors}, ensure_ascii=False, indent=2)
     prompt = f"""다음은 {date} 국내 여행 추천 입력 데이터입니다. 이 데이터만 근거로 한국어 Markdown 리포트를 작성하세요.
 
@@ -321,7 +461,7 @@ def create_report(api_key: str, model: str, date: str, recommendation: dict[str,
 
 반드시 추천 지역, 추천 이유, 날씨 요약, 행사/축제, 맛집 추천, 1일 일정 제안, 오류 요약(errors) 제목을 포함하세요. 맛집 목록이 비어 있으면 맛집 추천에 정확히 '데이터 없음'이라고 쓰고, 행사는 확정이 아닌 후보임을 밝히세요."""
     try:
-        report = request_gemini(api_key, model, prompt, max_output_tokens=1400)
+        report = (request_gemini if provider == "gemini" else request_openrouter if provider == "openrouter" else request_groq)(api_key, model, prompt, max_output_tokens=1400)
         return f"# {date} 국내 여행 추천 리포트\n\n{report.lstrip('# ').strip()}\n"
     except (GeminiRequestError, ValueError) as exc:
         add_error(errors, "report_generation", "GEMINI_REPORT_ERROR", str(exc))
@@ -379,15 +519,15 @@ def main() -> int:
         return 0
 
     try:
-        api_key, model = build_gemini_settings()
-        print("[1/3] 1차 추천 생성 중(Gemini)...")
-        recommendation = create_recommendation(api_key, model, args.travel_date, errors)
+        provider, api_key, model = build_llm_settings()
+        print(f"[1/3] 1차 추천 생성 중({provider})...")
+        recommendation = create_recommendation(api_key, model, args.travel_date, errors, provider)
         print(f"  - recommended_city: {recommendation['recommended_city']}")
         print("[2/3] 맛집 검색 중(Kakao Local API)...")
         places = search_restaurants(recommendation["recommended_city"], errors)
         print(f"  - 맛집 {len(places)}곳 검색 완료")
-        print("[3/3] 최종 리포트 생성 중(Gemini)...")
-        report = create_report(api_key, model, args.travel_date, recommendation, places, errors)
+        print(f"[3/3] 최종 리포트 생성 중({provider})...")
+        report = create_report(api_key, model, args.travel_date, recommendation, places, errors, provider)
         data_path, report_path = write_results(args.travel_date, recommendation, places, errors, report)
         print("  - 리포트 생성 완료")
         print(f"완료! {report_path.relative_to(BASE_DIR)} 및 {data_path.relative_to(BASE_DIR)}를 확인하세요.")

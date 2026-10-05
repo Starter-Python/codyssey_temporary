@@ -22,12 +22,12 @@ pip install -r requirements.txt
 cp .env.example .env                   # Windows PowerShell: Copy-Item .env.example .env
 ```
 
-`.env`에 본인의 Gemini와 Kakao 키를 입력합니다. Google AI Studio에서 발급한 Gemini API 키는 `GEMINI_API_KEY`로 설정합니다. Gemini API는 무료 등급에서 시작할 수 있지만, 사용 가능한 모델과 요청 제한은 계정·시점에 따라 달라질 수 있습니다.[1] 기본 모델은 `gemini-2.5-flash`이며, 계정에서 지원하지 않으면 AI Studio에서 사용 가능한 모델명으로 `GEMINI_MODEL`을 바꿉니다.
+`.env`에 본인의 Gemini와 Kakao 키를 입력합니다. Google AI Studio에서 발급한 Gemini API 키는 `GEMINI_API_KEY`로 설정합니다. Gemini API는 무료 등급에서 시작할 수 있지만, 사용 가능한 모델과 요청 제한은 계정·시점에 따라 달라질 수 있습니다.[1] 기본 모델은 `gemini-3.8-flash`이며, 계정에서 지원하지 않으면 AI Studio에서 사용 가능한 모델명으로 `GEMINI_MODEL`을 바꿉니다.
 
 ```dotenv
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 KAKAO_REST_API_KEY=YOUR_KAKAO_REST_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 ```bash

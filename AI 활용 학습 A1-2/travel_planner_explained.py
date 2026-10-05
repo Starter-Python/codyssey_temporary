@@ -1,35 +1,63 @@
 #!/usr/bin/env python3
 """
 ================================================================================
- travel_planner_explained.py — travel_planner.py의 모든 코드에 한글 설명을 단 버전
+ travel_planner_explained.py — travel_planner.py 전체 코드에 자세한 한글 설명을 단 버전
 ================================================================================
- 아래 코드는 travel_planner.py와 동작이 같습니다. 각 함수·상수 위에
- "무엇을 하는 코드인지 / 왜 필요한지"를 쉬운 말로 적어 두었습니다.
- 프로그램 전체 흐름:
-   main() → [1/3] create_recommendation() : AI가 추천 JSON 생성
-          → [2/3] search_restaurants()   : 카카오 지도로 맛집 검색
-          → [3/3] create_report()        : AI가 Markdown 리포트 작성
-          → write_results()              : results/ 폴더에 저장
+
+[이 프로그램이 하는 일 3단계]
+  main() → [1/3] create_recommendation() : AI가 추천 JSON 생성
+         → [2/3] search_restaurants()   : 카카오 지도로 맛집 검색
+         → [3/3] create_report()        : AI가 Markdown 리포트 작성
+         → write_results()              : results/ 폴더에 저장
+
+[왜 JSON을 먼저 만들고 그 다음 카카오 지도를 검색하나요?]
+  사람 말("겨울엔 바다가 보이는 곳이 좋아요")은 애매해서 지도 API가 이해할 수 없습니다.
+  그래서 1단계에서 AI가 "도시 이름 딱 하나"를 JSON 칸(recommended_city)에 정확히 적어 주고,
+  그 이름을 그대로 카카오 검색창에 넣는 것입니다. JSON이 '번역기' 역할을 합니다.
+
+[자주 나오는 용어]
+  - API: 프로그램끼리 대화하는 창구. "AI에게 질문 보내기", "지도에 검색 요청"이 모두 API 호출입니다.
+  - URL(주소): 서버가 있는 곳. API 키(비밀번호)와 짝을 이룹니다. 주소가 있어야 서버를 찾을 수 있습니다.
+  - API 키: 이 프로그램이 서버에 접속할 수 있게 해주는 비밀번호. .env 파일에만 보관합니다.
+  - JSON: {"도시": "강릉"} 처럼 칸이 정해진 데이터 형식. 다음 단계에 넘기기 쉽습니다.
+  - .env: API 키 같은 비밀을 코드 밖에서 보관하는 파일. GitHub에 올라가지 않습니다.
+  - class: 관련 있는 데이터와 기능을 묶는 틀.
+  - requests: 인터넷으로 요청(GET/POST)을 보내는 파이썬 도구.
+  - GET vs POST: GET은 '질문만 하는 요청'(지도 검색), POST는 '긴 데이터를 보내는 요청'(AI 생성)에 씁니다.
+  - CLI: 명령어로 실행하는 프로그램(마우스 클릭 대신 터미널에 명령 입력).
 ================================================================================
 """
 from __future__ import annotations
 
+# argparse: 명령어 옵션(예: -date "2024-01-01")을 읽어 주는 도구입니다.
 import argparse
+# json: AI 답변 같은 텍스트를 파이썬 딕셔너리로 바꾸고(json.loads),
+# 반대로 파이썬 데이터를 JSON 문자열로 바꾸는(json.dumps) 도구입니다.
 import json
+# os: 운영체제와 대화하는 도구. 여기서는 .env에 적어 둔 API 키를 읽을 때(os.getenv) 씁니다.
 import os
+# re: 정규표현식 도구. 긴 문장 속에서 JSON 부분만 골라내거나 키를 가릴 때 씁니다.
 import re
+# sys: 프로그램 자체와 대화하는 도구. 오류 메시지를 화면에 출력(sys.stderr)할 때 씁니다.
 import sys
+# time: 시간 관련 도구. API가 바쁘다고 하면 '3초 기다렸다가 다시 시도'할 때(time.sleep) 씁니다.
 import time
+# datetime: 날짜 도구. '2026-02-30'처럼 달력에 없는 날짜인지 검사할 때 씁니다.
 from datetime import datetime
+# pathlib: 파일 경로 도구. 'results' 폴더 위치를 운영체제에 맞게 다룰 때 씁니다.
 from pathlib import Path
+# typing: 변수에 어떤 종류의 값이 들어가는지 적어 두는 표시입니다. 실행에는 영향이 없고 가독성을 높입니다.
 from typing import Any
 
+# 아래 두 블록은 '있으면 쓰고, 없으면 친절한 안내'를 위한 방어 코드입니다.
 try:
+# requests: 인터넷으로 GET/POST 요청을 보내는 핵심 도구입니다.
     import requests
 except ImportError:
     requests = None  # type: ignore[assignment]
 
 try:
+# dotenv: .env 파일을 읽어서 환경변수로 등록해 주는 도구입니다.
     from dotenv import load_dotenv
 except ImportError:
     def load_dotenv(*args: Any, **kwargs: Any) -> bool:  # type: ignore[misc]
@@ -37,22 +65,27 @@ except ImportError:
 
 # ---------------------------------------------------------------------------
 # 설정값(상수) 영역: 프로그램 전체에서 쓰는 값들을 한 곳에 모아 둡니다.
-# 이렇게 모아 두면 나중에 바꿀 때 여기만 고치면 됩니다.
+# 대문자로 쓰는 것은 '프로그램 실행 중 바뀌지 않는 값'이라는 약속입니다.
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = BASE_DIR / "results"
-# 카카오 장소 검색 API 주소입니다. GET 요청으로 검색합니다.
+# 카카오 장소 검색 API의 '주소'입니다.
+# 왜 주소가 필요할까? API 키는 '비밀번호'일 뿐이고,
+# 키만으로는 서버가 '어디에 있는지' 알 수 없습니다.
+# 집 주소(URL) 없이 열쇠(API 키)만 들고 가면 집을 못 찾는 것과 같습니다.
+# → URL은 서버가 있는 곳, API 키는 출입 허가증이라고 이해하면 됩니다.
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
-# 구글 Gemini API 주소입니다. {model} 자리에 모델명이 들어갑니다.
+# 구글 Gemini API의 주소입니다. {model} 자리에 모델명이 들어갑니다.
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 # (대체 제공자) OpenRouter API 주소입니다.
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # (대체 제공자) Groq API 주소입니다.
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-# 외부 API 요청이 20초 안에 안 끝나면 실패로 처리합니다.
+# 외부 API가 20초 안에 답하지 않으면 '실패'로 처리합니다. 무한정 기다리지 않게 하는 장치입니다.
 TIMEOUT_SECONDS = 20
 # AI가 반드시 지켜야 할 답변 형식(칸막이)입니다.
-# 이 형식으로 답하도록 강제하면, 다음 단계에서 파싱이 실패할 확률이 크게 줄어듭니다.
+# 형식: {"recommended_city": "강릉", "weather": "맑음", "events": ["축제"], "reason": "..."}
+# 이 형식으로 답하도록 강제하면 다음 단계(카카오 검색)에서 파싱 실패 확률이 줄어듭니다.
 RECOMMENDATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -65,12 +98,14 @@ RECOMMENDATION_SCHEMA: dict[str, Any] = {
 }
 
 
-# 사용자에게 친절하게 보여 줄 수 있는 오류입니다. (예: API 키 미설정)
+# class(클래스)란? 관련 있는 데이터와 기능을 묶어 두는 '틀'입니다.
+# 파이썬에 원래 있는 RuntimeError를 상속받아,
+# '사용자에게 친절하게 보여 줄 우리 프로그램 전용 오류'를 만든 것입니다.
 class PlannerError(RuntimeError):
     """사용자에게 안내할 수 있는 오류."""
 
 
-# API 서버가 돌려준 HTTP 코드(401, 429 등)를 함께 담는 오류입니다.
+# HTTP 상태 코드(401, 403, 429 등)를 함께 들고 다니는 오류입니다. status_code 속성에 담아 둡니다.
 class GeminiRequestError(RuntimeError):
     """HTTP 상태를 포함하는 Gemini API 요청 오류."""
 
@@ -201,9 +236,8 @@ def build_gemini_settings() -> tuple[str, str]:
     return api_key, os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 
-# 어떤 AI 제공자를 쓸지 정합니다.
-# .env의 LLM_PROVIDER가 groq면 Groq, openrouter면 OpenRouter, gemini면 Gemini.
-# 설정이 없으면 Groq → OpenRouter → Gemini 순으로 키가 있는 것을 씁니다.
+# 어떤 AI 제공자(Gemini/Groq/OpenRouter)를 쓸지 정합니다.
+# .env의 LLM_PROVIDER 값에 따르고, 없으면 Groq → OpenRouter → Gemini 순으로 키가 있는 것을 씁니다.
 def build_llm_settings() -> tuple[str, str, str]:
     """LLM 제공자를 결정한다."""
     provider = os.getenv("LLM_PROVIDER", "").strip().lower()
@@ -373,6 +407,7 @@ def request_groq(
 
 # 1단계: 여행 날짜로 계절을 계산하고, AI에게 도시·날씨·행사·이유를 JSON으로 요청합니다.
 # JSON이 깨지면 보정 지시로 최대 2회 다시 시도합니다.
+# 여기서 만든 JSON의 recommended_city가 다음 단계 카카오 검색의 입력이 됩니다.
 def create_recommendation(api_key: str, model: str, travel_date: str, errors: list[dict[str, str]], provider: str = "gemini") -> dict[str, Any]:
     month = int(travel_date.split("-")[1])
     season = "봄" if month in (3, 4, 5) else "여름" if month in (6, 7, 8) else "가을" if month in (9, 10, 11) else "겨울"

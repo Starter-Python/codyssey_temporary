@@ -357,7 +357,7 @@ JSON 객체만 반환하세요: recommended_city(문자열), weather(문자열),
                 raise PlannerError("LLM 무료 모델의 요청 제한 또는 쿼터를 확인하세요(HTTP 429). 잠시 후 다시 시도하거나 다른 모델을 사용하세요.") from exc
             if status in (401, 403):
                 raise PlannerError(f"LLM API 키 또는 설정을 확인하세요(HTTP {status}).") from exc
-            raise PlannerError("Gemini API 연결 또는 응답 처리에 실패했습니다.") from exc
+            raise PlannerError(f"LLM API 연결 또는 응답 처리에 실패했습니다(HTTP {status}).") from exc
     raise PlannerError("Gemini 추천 생성 재시도 한도를 초과했습니다.")
 
 

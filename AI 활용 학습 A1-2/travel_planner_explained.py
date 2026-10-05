@@ -1,91 +1,35 @@
 #!/usr/bin/env python3
-"""
-================================================================================
- travel_planner_explained.py — travel_planner.py 전체 코드에 자세한 한글 설명을 단 버전
-================================================================================
-
-[이 프로그램이 하는 일 3단계]
-  main() → [1/3] create_recommendation() : AI가 추천 JSON 생성
-         → [2/3] search_restaurants()   : 카카오 지도로 맛집 검색
-         → [3/3] create_report()        : AI가 Markdown 리포트 작성
-         → write_results()              : results/ 폴더에 저장
-
-[왜 JSON을 먼저 만들고 그 다음 카카오 지도를 검색하나요?]
-  사람 말("겨울엔 바다가 보이는 곳이 좋아요")은 애매해서 지도 API가 이해할 수 없습니다.
-  그래서 1단계에서 AI가 "도시 이름 딱 하나"를 JSON 칸(recommended_city)에 정확히 적어 주고,
-  그 이름을 그대로 카카오 검색창에 넣는 것입니다. JSON이 '번역기' 역할을 합니다.
-
-[자주 나오는 용어]
-  - API: 프로그램끼리 대화하는 창구. "AI에게 질문 보내기", "지도에 검색 요청"이 모두 API 호출입니다.
-  - URL(주소): 서버가 있는 곳. API 키(비밀번호)와 짝을 이룹니다. 주소가 있어야 서버를 찾을 수 있습니다.
-  - API 키: 이 프로그램이 서버에 접속할 수 있게 해주는 비밀번호. .env 파일에만 보관합니다.
-  - JSON: {"도시": "강릉"} 처럼 칸이 정해진 데이터 형식. 다음 단계에 넘기기 쉽습니다.
-  - .env: API 키 같은 비밀을 코드 밖에서 보관하는 파일. GitHub에 올라가지 않습니다.
-  - class: 관련 있는 데이터와 기능을 묶는 틀.
-  - requests: 인터넷으로 요청(GET/POST)을 보내는 파이썬 도구.
-  - GET vs POST: GET은 '질문만 하는 요청'(지도 검색), POST는 '긴 데이터를 보내는 요청'(AI 생성)에 씁니다.
-  - CLI: 명령어로 실행하는 프로그램(마우스 클릭 대신 터미널에 명령 입력).
-================================================================================
-"""
+"""Gemini API와 Kakao Local API로 국내 여행 추천 리포트를 생성하는 CLI 프로그램."""
 from __future__ import annotations  # 미래 파이썬 문법을 미리 허용합니다. 타입 힌트 문법을 안전하게 쓰기 위한 것입니다.
 
-# argparse: 명령어 옵션(예: -date "2024-01-01")을 읽어 주는 도구입니다.
 import argparse
-# json: AI 답변 같은 텍스트를 파이썬 딕셔너리로 바꾸고(json.loads),
-# 반대로 파이썬 데이터를 JSON 문자열로 바꾸는(json.dumps) 도구입니다.
 import json
-# os: 운영체제와 대화하는 도구. 여기서는 .env에 적어 둔 API 키를 읽을 때(os.getenv) 씁니다.
 import os
-# re: 정규표현식 도구. 긴 문장 속에서 JSON 부분만 골라내거나 키를 가릴 때 씁니다.
 import re
-# sys: 프로그램 자체와 대화하는 도구. 오류 메시지를 화면에 출력(sys.stderr)할 때 씁니다.
 import sys
-# time: 시간 관련 도구. API가 바쁘다고 하면 '3초 기다렸다가 다시 시도'할 때(time.sleep) 씁니다.
 import time
-# datetime: 날짜 도구. '2026-02-30'처럼 달력에 없는 날짜인지 검사할 때 씁니다.
 from datetime import datetime
-# pathlib: 파일 경로 도구. 'results' 폴더 위치를 운영체제에 맞게 다룰 때 씁니다.
 from pathlib import Path
-# typing: 변수에 어떤 종류의 값이 들어가는지 적어 두는 표시입니다. 실행에는 영향이 없고 가독성을 높입니다.
 from typing import Any
 
-# 아래 두 블록은 '있으면 쓰고, 없으면 친절한 안내'를 위한 방어 코드입니다.
 try:  # 오류가 날 수 있는 코드를 감싸서, 문제가 생기면 except에서 처리합니다.
-# requests: 인터넷으로 GET/POST 요청을 보내는 핵심 도구입니다.
     import requests
 except ImportError:  # 패키지가 설치되어 있지 않으면 아래처럼 처리합니다.
     requests = None  # type: ignore[assignment]
 
 try:  # 오류가 날 수 있는 코드를 감싸서, 문제가 생기면 except에서 처리합니다.
-# dotenv: .env 파일을 읽어서 환경변수로 등록해 주는 도구입니다.
     from dotenv import load_dotenv
 except ImportError:  # 패키지가 설치되어 있지 않으면 아래처럼 처리합니다.
     def load_dotenv(*args: Any, **kwargs: Any) -> bool:  # type: ignore[misc]
         return False  # .env 로딩 실패를 알리는 값(타입 힌트용).
 
-# ---------------------------------------------------------------------------
-# 설정값(상수) 영역: 프로그램 전체에서 쓰는 값들을 한 곳에 모아 둡니다.
-# 대문자로 쓰는 것은 '프로그램 실행 중 바뀌지 않는 값'이라는 약속입니다.
-# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent  # 이 파일이 있는 폴더의 전체 경로입니다.
 RESULTS_DIR = BASE_DIR / "results"  # 결과 파일을 저장할 results 폴더 경로입니다.
-# 카카오 장소 검색 API의 '주소'입니다.
-# 왜 주소가 필요할까? API 키는 '비밀번호'일 뿐이고,
-# 키만으로는 서버가 '어디에 있는지' 알 수 없습니다.
-# 집 주소(URL) 없이 열쇠(API 키)만 들고 가면 집을 못 찾는 것과 같습니다.
-# → URL은 서버가 있는 곳, API 키는 출입 허가증이라고 이해하면 됩니다.
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
-# 구글 Gemini API의 주소입니다. {model} 자리에 모델명이 들어갑니다.
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-# (대체 제공자) OpenRouter API 주소입니다.
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# (대체 제공자) Groq API 주소입니다.
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-# 외부 API가 20초 안에 답하지 않으면 '실패'로 처리합니다. 무한정 기다리지 않게 하는 장치입니다.
 TIMEOUT_SECONDS = 20  # 외부 API 응답 대기 시간 상한(초).
-# AI가 반드시 지켜야 할 답변 형식(칸막이)입니다.
-# 형식: {"recommended_city": "강릉", "weather": "맑음", "events": ["축제"], "reason": "..."}
-# 이 형식으로 답하도록 강제하면 다음 단계(카카오 검색)에서 파싱 실패 확률이 줄어듭니다.
 RECOMMENDATION_SCHEMA: dict[str, Any] = {
     "type": "object",  # 전체 답변이 '객체(키-값 묶음)' 형태여야 함을 명시합니다.
     "properties": {  # 객체 안에 들어갈 키들과 각각의 타입을 정의합니다.
@@ -98,14 +42,10 @@ RECOMMENDATION_SCHEMA: dict[str, Any] = {
 }  # 블록 끝.
 
 
-# class(클래스)란? 관련 있는 데이터와 기능을 묶어 두는 '틀'입니다.
-# 파이썬에 원래 있는 RuntimeError를 상속받아,
-# '사용자에게 친절하게 보여 줄 우리 프로그램 전용 오류'를 만든 것입니다.
 class PlannerError(RuntimeError):
     """사용자에게 안내할 수 있는 오류."""
 
 
-# HTTP 상태 코드(401, 403, 429 등)를 함께 들고 다니는 오류입니다. status_code 속성에 담아 둡니다.
 class GeminiRequestError(RuntimeError):
     """HTTP 상태를 포함하는 Gemini API 요청 오류."""
 
@@ -114,8 +54,6 @@ class GeminiRequestError(RuntimeError):
         self.status_code = status_code  # HTTP 코드(예: 429)를 오류 객체 안에 저장해 둡니다.
 
 
-# 명령어로 입력된 옵션(-date, --cached, --refresh)을 읽고 검증합니다.
-# 날짜를 안 주면 실행 중에 직접 물어보고, 진짜 달력에 없는 날짜(예: 2026-02-30)는 거부합니다.
 def parse_args() -> argparse.Namespace:  # 1단계 준비: 명령어 옵션을 읽고 날짜를 검증합니다.
     parser = argparse.ArgumentParser(  # 옵션 파서를 만들고 설명과 도움말 형식을 지정합니다.
         description="Gemini API와 Kakao Local API로 국내 여행 추천 리포트를 생성합니다.",  # --help 실행 시 보여 줄 프로그램 설명입니다.
@@ -145,8 +83,6 @@ def parse_args() -> argparse.Namespace:  # 1단계 준비: 명령어 옵션을 �
     return args  # 검증된 옵션 값들을 돌려줍니다.
 
 
-# AI가 "경기도" 같은 넓은 지역을 추천해도,
-# 지도 검색이 잘 되도록 "가평"처럼 구체적인 도시 이름으로 바꿔 줍니다.
 def normalize_city_name(city: str) -> str:  # 넓은 지역명을 검색에 적합한 도시명으로 바꿉니다.
     """광역시/도 등 광역 지자체 명칭이나 수식어를 지도 검색에 적합한 대표 도시/지역명으로 정규화."""
     cleaned = city.strip()  # 앞뒤 공백을 제거합니다.
@@ -174,8 +110,6 @@ def normalize_city_name(city: str) -> str:  # 넓은 지역명을 검색에 적�
     return replacements.get(cleaned, cleaned)  # 사전에 있으면 바뀐 이름을, 없으면 원래 이름을 돌려줍니다.
 
 
-# AI 답변 앞뒤에 붙은 설명 문구나 ```json 코드블록을 걷어 내고
-# 순수한 JSON 부분만 뽑아냅니다. 그래야 json.loads()가 성공합니다.
 def extract_json_object(raw_text: str) -> str:  # AI 답변 텍스트에서 JSON 부분만 골라냅니다.
     """마크다운 코드블록이나 불필요한 앞뒤 텍스트가 섞여 있어도 유효한 JSON 객체 블록만 추출."""
     text = raw_text.strip()  # 앞뒤 공백을 제거합니다.
@@ -188,7 +122,6 @@ def extract_json_object(raw_text: str) -> str:  # AI 답변 텍스트에서 JSON
     return text  # 못 찾았으면 원래 텍스트를 그대로 돌려줍니다.
 
 
-# 오류 메시지에 API 키가 섞여 나올 수도 있으므로 [REDACTED]로 가려 줍니다.
 def redact_secrets(message: str) -> str:  # 비밀(API 키)이 노출되지 않게 가리는 함수입니다.
     safe = str(message)  # 원본 메시지를 문자열로 준비합니다.
     for name in ("GEMINI_API_KEY", "KAKAO_REST_API_KEY", "OPENROUTER_API_KEY"):  # 세 가지 키 이름을 하나씩 확인합니다.
@@ -197,13 +130,10 @@ def redact_secrets(message: str) -> str:  # 비밀(API 키)이 노출되지 않�
     return re.sub(r"(?:AIza|sk-)[A-Za-z0-9_-]+", "[REDACTED]", safe)  # 키처럼 생긴 문자열 패턴도 한 번 더 가립니다.
 
 
-# 오류 하나를 {단계, 종류, 내용} 형태로 errors 목록에 추가합니다.
 def add_error(errors: list[dict[str, str]], step: str, kind: str, message: str) -> None:  # 오류 기록을 목록에 추가하는 작은 도우미입니다.
     errors.append({"step": step, "type": kind, "message": redact_secrets(message)[:300]})  # {단계, 종류, 내용} 형태로 추가하되, 비밀을 가리고 300자로 자릅니다.
 
 
-# AI가 준 JSON이 우리가 원하는 모양인지 한 번 더 검사합니다.
-# (필수 키 4개, 문자열/배열 타입, 빈 값 여부 등)
 def validate_recommendation(data: Any) -> dict[str, Any]:  # AI 답변 JSON이 우리 형식과 맞는지 검사합니다.
     if not isinstance(data, dict):  # 답변이 객체(사전) 형태가 아니면 거부합니다.
         raise ValueError("추천 결과의 최상위 형식이 객체가 아닙니다.")  # 형식이 틀렸다는 오류를 냅니다.
@@ -224,7 +154,6 @@ def validate_recommendation(data: Any) -> dict[str, Any]:  # AI 답변 JSON이 �
     return data  # 검증을 통과한 추천 데이터를 돌려줍니다.
 
 
-# .env에서 Gemini 키와 모델명을 읽습니다. 키가 없으면 바로 안내 메시지를 띄웁니다.
 def build_gemini_settings() -> tuple[str, str]:  # Gemini 키와 모델명을 읽어 옵니다.
     api_key = os.getenv("GEMINI_API_KEY")  # 환경변수(.env)에서 키를 가져옵니다. 코드에 키를 직접 쓰지 않습니다.
     if not api_key:  # 키가 없으면,
@@ -236,8 +165,6 @@ def build_gemini_settings() -> tuple[str, str]:  # Gemini 키와 모델명을 �
     return api_key, os.getenv("GEMINI_MODEL", "gemini-3.8-flash")  # 키와 모델명(없으면 기본값)을 돌려줍니다.
 
 
-# 어떤 AI 제공자(Gemini/Groq/OpenRouter)를 쓸지 정합니다.
-# .env의 LLM_PROVIDER 값에 따르고, 없으면 Groq → OpenRouter → Gemini 순으로 키가 있는 것을 씁니다.
 def build_llm_settings() -> tuple[str, str, str]:  # 어떤 AI 제공자를 쓸지 결정합니다.
     """LLM 제공자를 결정한다."""
     provider = os.getenv("LLM_PROVIDER", "").strip().lower()  # 사용자가 지정한 제공자 이름을 읽습니다.
@@ -265,7 +192,6 @@ def build_llm_settings() -> tuple[str, str, str]:  # 어떤 AI 제공자를 쓸�
     return "gemini", api_key, model  # 마지막으로 Gemini를 씁니다.
 
 
-# OpenRouter 서버에 질문을 보내고 답변 텍스트를 받습니다. 429/503이면 3초 쉬고 최대 2번 더 시도합니다.
 def request_openrouter(  # OpenRouter에 요청을 보내는 함수입니다.
     api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None  # 이 함수들이 받는 재료들입니다.
 ) -> str:  # 호출 블록 끝.
@@ -307,7 +233,6 @@ def request_openrouter(  # OpenRouter에 요청을 보내는 함수입니다.
     raise GeminiRequestError("OpenRouter 요청 재시도 한도를 초과했습니다.")  # API 오류를 위로 올려 보냅니다.
 
 
-# Gemini 응답 JSON에서 실제 답변 문장 부분만 꺼냅니다.
 def extract_gemini_text(payload: dict[str, Any]) -> str:  # 함수 정의입니다.
     try:  # 오류가 날 수 있는 코드를 감싸서, 문제가 생기면 except에서 처리합니다.
         parts = payload["candidates"][0]["content"]["parts"]
@@ -319,9 +244,6 @@ def extract_gemini_text(payload: dict[str, Any]) -> str:  # 함수 정의입니�
     return text  # 못 찾았으면 원래 텍스트를 그대로 돌려줍니다.
 
 
-# Gemini 서버에 질문을 보내고 답변 텍스트를 받습니다.
-# thinkingConfig(thinkingBudget: 0)으로 AI의 내부 '생각하기'를 꺼서
-# 답변이 중간에 잘리는 현상을 막습니다.
 def request_gemini(  # Gemini에 요청을 보내는 함수입니다.
     api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None  # 이 함수들이 받는 재료들입니다.
 ) -> str:  # 호출 블록 끝.
@@ -363,7 +285,6 @@ def request_gemini(  # Gemini에 요청을 보내는 함수입니다.
     raise GeminiRequestError("Gemini 요청 재시도 한도를 초과했습니다.")  # API 오류를 위로 올려 보냅니다.
 
 
-# Groq 서버에 질문을 보내고 답변 텍스트를 받습니다.
 def request_groq(  # Groq에 요청을 보내는 함수입니다.
     api_key: str, model: str, prompt: str, *, max_output_tokens: int, response_schema: dict[str, Any] | None = None  # 이 함수들이 받는 재료들입니다.
 ) -> str:  # 호출 블록 끝.
@@ -405,9 +326,6 @@ def request_groq(  # Groq에 요청을 보내는 함수입니다.
     raise GeminiRequestError("Groq 요청 재시도 한도를 초과했습니다.")  # API 오류를 위로 올려 보냅니다.
 
 
-# 1단계: 여행 날짜로 계절을 계산하고, AI에게 도시·날씨·행사·이유를 JSON으로 요청합니다.
-# JSON이 깨지면 보정 지시로 최대 2회 다시 시도합니다.
-# 여기서 만든 JSON의 recommended_city가 다음 단계 카카오 검색의 입력이 됩니다.
 def create_recommendation(api_key: str, model: str, travel_date: str, errors: list[dict[str, str]], provider: str = "gemini") -> dict[str, Any]:  # 함수 정의입니다.
     month = int(travel_date.split("-")[1])  # 날짜에서 월만 숫자로 꺼냅니다.
     season = "봄" if month in (3, 4, 5) else "여름" if month in (6, 7, 8) else "가을" if month in (9, 10, 11) else "겨울"  # 월에 따라 계절을 정합니다.
@@ -439,11 +357,10 @@ JSON 객체만 반환하세요: recommended_city(문자열), weather(문자열),
                 raise PlannerError("LLM 무료 모델의 요청 제한 또는 쿼터를 확인하세요(HTTP 429). 잠시 후 다시 시도하거나 다른 모델을 사용하세요.") from exc  # 친절한 오류 메시지로 중단합니다.
             if status in (401, 403):  # 인증 오류(401/403)면,
                 raise PlannerError(f"LLM API 키 또는 설정을 확인하세요(HTTP {status}).") from exc  # 친절한 오류 메시지로 중단합니다.
-            raise PlannerError("Gemini API 연결 또는 응답 처리에 실패했습니다.") from exc  # 친절한 오류 메시지로 중단합니다.
+            raise PlannerError(f"LLM API 연결 또는 응답 처리에 실패했습니다(HTTP {status}).") from exc  # 친절한 오류 메시지로 중단합니다.
     raise PlannerError("Gemini 추천 생성 재시도 한도를 초과했습니다.")  # 친절한 오류 메시지로 중단합니다.
 
 
-# 카카오가 돌려준 장소 정보를 우리가 쓰는 표준 모양(name, address, ...)으로 바꿉니다.
 def normalize_place(place: dict[str, Any]) -> dict[str, Any]:  # 함수 정의입니다.
     def as_number(value: Any) -> float | None:  # 함수 정의입니다.
         try:  # 오류가 날 수 있는 코드를 감싸서, 문제가 생기면 except에서 처리합니다.
@@ -459,8 +376,6 @@ def normalize_place(place: dict[str, Any]) -> dict[str, Any]:  # 함수 정의�
     }  # 블록 끝.
 
 
-# 2단계: '도시 맛집'으로 카카오 지도에서 검색해 최대 5곳을 가져옵니다.
-# 키 없음·인증 실패·결과 0건 등 어떤 문제가 있어도 프로그램은 계속 진행합니다.
 def search_restaurants(city: str, errors: list[dict[str, str]]) -> list[dict[str, Any]]:  # 함수 정의입니다.
     kakao_key = os.getenv("KAKAO_REST_API_KEY")  # Kakao 키를 읽습니다.
     search_city = normalize_city_name(city)  # 도시 이름을 검색에 적합하게 바꿉니다.
@@ -502,7 +417,6 @@ def search_restaurants(city: str, errors: list[dict[str, str]]) -> list[dict[str
     return []  # 빈 목록을 돌려줍니다.
 
 
-# AI 리포트 생성이 실패했을 때, 지금까지 모은 데이터만으로 최소한의 리포트를 만듭니다.
 def fallback_report(date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]]) -> str:  # 함수 정의입니다.
     restaurants = "\n".join(f"- **{p['name']}** — {p['address']}" for p in places) or "- 데이터 없음"  # 맛집 목록을 불릿 문자열로 만듭니다.
     events = "\n".join(f"- {event}" for event in recommendation["events"]) or "- 데이터 없음"  # 행사 목록을 불릿 문자열로 만듭니다.
@@ -541,7 +455,6 @@ def fallback_report(date: str, recommendation: dict[str, Any], places: list[dict
 """
 
 
-# 3단계: 추천 JSON·맛집 목록·오류 목록을 AI에게 주고 최종 Markdown 리포트를 받습니다. 실패 시 fallback_report()를 씁니다.
 def create_report(api_key: str, model: str, date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]], provider: str = "gemini") -> str:  # 함수 정의입니다.
     source = json.dumps({"recommendation": recommendation, "restaurants": places, "errors": errors}, ensure_ascii=False, indent=2)  # 추천·맛집·오류 데이터를 JSON 문자열로 묶습니다.
     prompt = f"""다음은 {date} 국내 여행 추천 입력 데이터입니다. 이 데이터만 근거로 한국어 Markdown 리포트를 작성하세요.  # AI에게 줄 리포트 작성 지시문을 만듭니다.
@@ -558,7 +471,6 @@ def create_report(api_key: str, model: str, date: str, recommendation: dict[str,
         return fallback_report(date, recommendation, places, errors)
 
 
-# 예전에 같은 날짜로 실행해 저장해 둔 JSON이 있으면 읽어 옵니다. (API 비용 절약)
 def load_cached_data(date: str) -> dict[str, Any] | None:  # 함수 정의입니다.
     """기존 저장된 원본 데이터(JSON)가 있으면 읽어와 반환 (항목 4: 결과 캐싱 전략)."""
     data_path = RESULTS_DIR / f"{date}_travel_data.json"  # JSON 결과 파일 경로를 만듭니다.
@@ -573,7 +485,6 @@ def load_cached_data(date: str) -> dict[str, Any] | None:  # 함수 정의입니
     return None  # 없다는 뜻으로 None을 돌려줍니다.
 
 
-# 최종 결과(원본 JSON과 Markdown 리포트)를 results/ 폴더에 저장합니다.
 def write_results(date: str, recommendation: dict[str, Any], places: list[dict[str, Any]], errors: list[dict[str, str]], report: str) -> tuple[Path, Path]:  # 함수 정의입니다.
     RESULTS_DIR.mkdir(exist_ok=True)  # results 폴더가 없으면 만듭니다.
     data_path, report_path = RESULTS_DIR / f"{date}_travel_data.json", RESULTS_DIR / f"{date}_travel_plan.md"  # 두 결과 파일 경로를 만듭니다.
@@ -582,8 +493,38 @@ def write_results(date: str, recommendation: dict[str, Any], places: list[dict[s
     return data_path, report_path  # 저장된 파일 경로들을 돌려줍니다.
 
 
-# 프로그램의 시작점. 전체 흐름을 지휘합니다.
-# 캐시가 있으면 그대로 쓰고, 없으면 [1/3] → [2/3] → [3/3] 순서로 실행합니다.
+# 선택된 제공자로 [1/3] → [2/3] → [3/3] 전체 파이프라인을 실행합니다.
+# 실패 시 처음부터 다시 돌릴 수 있게 묶어 둔 것입니다.
+def run_pipeline(provider: str, api_key: str, model: str, travel_date: str, errors: list[dict[str, str]]) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """선택된 제공자로 [1/3] → [2/3] → [3/3] 전체 파이프라인을 실행합니다."""
+    print(f"[1/3] 1차 추천 생성 중({provider})...")  # 사용자에게 화면에 보여 줍니다.
+    recommendation = create_recommendation(api_key, model, travel_date, errors, provider)  # 4) 1단계: AI가 추천 JSON을 만듭니다.
+    print(f"  - recommended_city: {recommendation['recommended_city']}")  # 사용자에게 화면에 보여 줍니다.
+    print("[2/3] 맛집 검색 중(Kakao Local API)...")  # 사용자에게 화면에 보여 줍니다.
+    places = search_restaurants(recommendation["recommended_city"], errors)  # 5) 2단계: 카카오 지도에서 맛집을 검색합니다.
+    print(f"  - 맛집 {len(places)}곳 검색 완료")  # 사용자에게 화면에 보여 줍니다.
+    print(f"[3/3] 최종 리포트 생성 중({provider})...")  # 사용자에게 화면에 보여 줍니다.
+    report = create_report(api_key, model, travel_date, recommendation, places, errors, provider)  # 6) 3단계: AI가 최종 리포트를 만듭니다.
+    return recommendation, places, report
+
+
+# 429(요청 제한) 또는 503(과부하) 성격의 오류인지 확인합니다. 전환 대상 여부 판단에 씁니다.
+def _is_quota_or_overload_error(exc: Exception) -> bool:
+    """429(요청 제한) 또는 503(과부하) 성격의 오류인지 확인합니다. 전환 대상 여부 판단에 씁니다."""
+    text = str(exc)
+    return any(keyword in text for keyword in ("429", "503", "제한", "쿼터", "과부하"))
+
+
+# 현재 제공자가 안 되면 대신 쓸 수 있는 다른 제공자를 찾습니다. 키가 없으면 None.
+def _fallback_provider(provider: str) -> tuple[str, str, str] | None:
+    """현재 제공자가 안 되면 대신 쓸 수 있는 다른 제공자를 찾습니다. 키가 없으면 None."""
+    if provider == "gemini" and os.getenv("OPENROUTER_API_KEY"):
+        return "openrouter", os.getenv("OPENROUTER_API_KEY") or "", os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    if provider == "openrouter" and os.getenv("GEMINI_API_KEY"):
+        return "gemini", os.getenv("GEMINI_API_KEY") or "", os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    return None  # 없다는 뜻으로 None을 돌려줍니다.
+
+
 def main() -> int:  # 함수 정의입니다.
     args = parse_args()  # 1) 명령어 옵션 읽기.
     load_dotenv(BASE_DIR / ".env")  # 2) .env에서 키 읽기.
@@ -613,14 +554,16 @@ def main() -> int:  # 함수 정의입니다.
 
     try:  # 오류가 날 수 있는 코드를 감싸서, 문제가 생기면 except에서 처리합니다.
         provider, api_key, model = build_llm_settings()  # 3) AI 제공자와 키, 모델을 결정합니다.
-        print(f"[1/3] 1차 추천 생성 중({provider})...")  # 사용자에게 화면에 보여 줍니다.
-        recommendation = create_recommendation(api_key, model, args.travel_date, errors, provider)  # 4) 1단계: AI가 추천 JSON을 만듭니다.
-        print(f"  - recommended_city: {recommendation['recommended_city']}")  # 사용자에게 화면에 보여 줍니다.
-        print("[2/3] 맛집 검색 중(Kakao Local API)...")  # 사용자에게 화면에 보여 줍니다.
-        places = search_restaurants(recommendation["recommended_city"], errors)  # 5) 2단계: 카카오 지도에서 맛집을 검색합니다.
-        print(f"  - 맛집 {len(places)}곳 검색 완료")  # 사용자에게 화면에 보여 줍니다.
-        print(f"[3/3] 최종 리포트 생성 중({provider})...")  # 사용자에게 화면에 보여 줍니다.
-        report = create_report(api_key, model, args.travel_date, recommendation, places, errors, provider)  # 6) 3단계: AI가 최종 리포트를 만듭니다.
+        try:  # 오류가 날 수 있는 코드를 감싸서, 문제가 생기면 except에서 처리합니다.
+            recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)  # 첫 번째 제공자로 실행
+        except (PlannerError, GeminiRequestError) as exc:  # 제공자 오류가 나면 전환을 시도합니다.
+            # Gemini 한도/과부하 → OpenRouter로, OpenRouter 한도 → Gemini로 자동 전환
+            fallback = _fallback_provider(provider) if _is_quota_or_overload_error(exc) else None  # 한도/과부하 오류일 때만 다른 제공자를 찾습니다.
+            if fallback is None:
+                raise  # 그대로 다시 올립니다.
+            provider, api_key, model = fallback  # 다른 제공자로 교체합니다.
+            print(f"  - 현재 제공자 장애/한도로 인해 {provider}(으)로 자동 전환합니다.")  # 사용자에게 화면에 보여 줍니다.
+            recommendation, places, report = run_pipeline(provider, api_key, model, args.travel_date, errors)  # 교체된 제공자로 다시 실행
         data_path, report_path = write_results(args.travel_date, recommendation, places, errors, report)  # 두 결과 파일 경로를 만듭니다.
         print("  - 리포트 생성 완료")  # 사용자에게 화면에 보여 줍니다.
         print(f"완료! {report_path.relative_to(BASE_DIR)} 및 {data_path.relative_to(BASE_DIR)}를 확인하세요.")  # 사용자에게 화면에 보여 줍니다.
@@ -630,6 +573,5 @@ def main() -> int:  # 함수 정의입니다.
         return 1  # 실패 종료를 알립니다(1은 오류 코드).
 
 
-# 이 파일을 직접 실행했을 때만 main()을 호출합니다. (다른 파일에서 import하면 실행되지 않음)
 if __name__ == "__main__":  # 이 파일을 직접 실행할 때만 아래를 실행합니다.
     raise SystemExit(main())  # main() 결과 코드로 프로그램을 종료합니다.
